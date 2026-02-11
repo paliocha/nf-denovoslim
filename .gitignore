@@ -1,0 +1,18 @@
+# Nextflow runtime
+.nextflow/
+.nextflow.log*
+work/
+runs/
+
+# Singularity/Apptainer cache
+singularity_cache/
+
+# SLURM output
+*.out
+
+# Container images (large binaries)
+*.sif
+*.tar
+
+# Samplesheets (contain local paths)
+*.samplesheet.csv

@@ -1,0 +1,29 @@
+Bootstrap: docker
+From: mambaorg/micromamba:2.5.0
+
+%post
+    # Set PATH so micromamba and conda env bins are found
+    export MAMBA_ROOT_PREFIX=/opt/conda
+    export PATH="/opt/conda/bin:/opt/conda/condabin:$PATH"
+
+    # Install Python + Perl via conda
+    micromamba install -y -n base -c conda-forge \
+        python=3.11 \
+        perl \
+    && micromamba clean --all --yes
+
+    # Install TD2 from PyPI (includes PSAURON)
+    /opt/conda/bin/pip install --no-cache-dir TD2
+
+%environment
+    export MAMBA_ROOT_PREFIX=/opt/conda
+    export PATH="/opt/conda/bin:$PATH"
+
+%test
+    TD2.LongOrfs --help
+    TD2.Predict --help
+
+%labels
+    maintainer martin.paliocha@nmbu.no
+    description TD2 (TransDecoder 2) with PSAURON for ORF prediction
+    version 1.0.8
