@@ -227,6 +227,7 @@ workflow {
 
     TRANSANNOT(
         SELECT_BEST_ORF.out.faa,
+        file(params.eggnog_annotations, checkIfExists: true),
         params.species_label
     )
 
