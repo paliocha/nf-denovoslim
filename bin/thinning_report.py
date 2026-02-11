@@ -229,12 +229,12 @@ def main():
         r.write("  WHY: De novo Trinity assemblies are highly fragmented, containing\n")
         r.write("  many near-identical isoforms, partial duplicates, and chimeras.\n")
         r.write("  Successive deduplication (MMseqs2) and expression-aware clustering\n")
-        r.write("  (Grouper + SuperTranscripts) collapse these into a non-redundant\n")
+        r.write("  (Corset + Lace) collapse these into a non-redundant\n")
         r.write("  gene set suitable for quantification and downstream analysis.\n\n")
         r.write(f"  Original Trinity transcripts:     {fmt(n_trinity)}\n")
         r.write(f"  After MMseqs2 97% nt dedup:       {fmt(n_deduped)}  "
                 f"({n_deduped/n_trinity*100:.1f}% retained)\n")
-        r.write(f"  After Grouper -> SuperTranscripts: {fmt(n_genes)}  "
+        r.write(f"  After Corset -> Lace:              {fmt(n_genes)}  "
                 f"({n_genes/n_trinity*100:.1f}% of original)\n")
         r.write(f"  Genes with predicted ORF:          {fmt(n_proteins)}  "
                 f"({n_proteins/n_genes*100:.1f}% of genes)\n")
@@ -276,13 +276,14 @@ def main():
             r.write(f"  Median PSAURON:      {statistics.median(psauron_scores):.3f}\n")
         r.write("\n")
 
-        # --- Section 5: Grouper cluster sizes ---
-        r.write("5. GROUPER CLUSTER SIZES\n")
+        # --- Section 5: Corset cluster sizes ---
+        r.write("5. CORSET CLUSTER SIZES\n")
         r.write("-" * 40 + "\n")
-        r.write("  WHY: Grouper uses Salmon equivalence classes to identify transcripts\n")
-        r.write("  that share reads and are likely isoforms of the same gene. Cluster\n")
-        r.write("  size = 1 means the gene had a single transcript (no merging needed);\n")
-        r.write("  larger clusters indicate multi-isoform loci collapsed into one gene.\n\n")
+        r.write("  WHY: Corset uses Salmon equivalence classes and hierarchical clustering\n")
+        r.write("  with condition-aware paralog splitting to group transcripts into genes.\n")
+        r.write("  Cluster size = 1 means the gene had a single transcript (no merging\n")
+        r.write("  needed); larger clusters indicate multi-isoform loci collapsed into\n")
+        r.write("  one gene.\n\n")
         if cluster_counts:
             r.write(f"  Total clusters (genes): {fmt(len(cluster_counts))}\n")
             r.write(f"  Mean transcripts/gene:  {statistics.mean(cluster_counts):.2f}\n")

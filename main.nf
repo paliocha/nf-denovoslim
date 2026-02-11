@@ -23,8 +23,9 @@ include { SALMON_INDEX_INITIAL   } from './modules/salmon_index'
 include { SALMON_INDEX_FINAL     } from './modules/salmon_index'
 include { SALMON_QUANT_INITIAL   } from './modules/salmon_quant'
 include { SALMON_QUANT_FINAL     } from './modules/salmon_quant'
-include { GROUPER                } from './modules/grouper'
-include { SUPERTRANSCRIPTS       } from './modules/supertranscripts'
+include { CORSET                 } from './modules/corset'
+include { LACE                   } from './modules/lace'
+include { MMSEQS2_TAXONOMY       } from './modules/mmseqs2_taxonomy'
 include { TD2_LONGORFS           } from './modules/td2_longorfs'
 include { MMSEQS2_SEARCH_SWISSPROT } from './modules/mmseqs2_search'
 include { MMSEQS2_SEARCH_PFAM   } from './modules/mmseqs2_search'
@@ -120,7 +121,7 @@ workflow {
     MMSEQS2_CLUSTER_NT(ch_trinity)
 
     // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 2-3: Salmon initial index + quant (with --dumpEq for Grouper)║
+    // ║  STEP 2-3: Salmon initial index + quant (with --dumpEq for Corset) ║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
     SALMON_INDEX_INITIAL(MMSEQS2_CLUSTER_NT.out.rep_fasta)
@@ -134,35 +135,41 @@ workflow {
     )
 
     // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 4: Grouper — expression-aware transcript-to-gene clustering  ║
+    // ║  STEP 4: Corset — hierarchical transcript-to-gene clustering       ║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
     // Collect all quant directories
     ch_all_quants = SALMON_QUANT_INITIAL.out.quant_dir.collect()
 
-    // Build sample-condition metadata for Grouper YAML
+    // Build sample-condition metadata for Corset -g/-n flags
     ch_sample_conditions = ch_filtered_reads
         .map { sample_id, condition, r1, r2 ->
             [ sample_id: sample_id, condition: condition ]
         }
         .collect()
 
-    GROUPER(ch_all_quants, ch_sample_conditions)
+    CORSET(ch_all_quants, ch_sample_conditions)
 
     // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 5: SuperTranscripts — merge transcripts per gene group       ║
+    // ║  STEP 5: Lace — build SuperTranscripts from Corset clusters        ║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
-    SUPERTRANSCRIPTS(
+    LACE(
         MMSEQS2_CLUSTER_NT.out.rep_fasta,
-        GROUPER.out.clust
+        CORSET.out.clust
     )
+
+    // ╔══════════════════════════════════════════════════════════════════════╗
+    // ║  STEP 5b: Taxonomy filter — keep only Streptophyta SuperTranscripts║
+    // ╚══════════════════════════════════════════════════════════════════════╝
+
+    MMSEQS2_TAXONOMY(LACE.out.fasta)
 
     // ╔══════════════════════════════════════════════════════════════════════╗
     // ║  STEP 6-9: TD2 ORF prediction with homology support                ║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
-    TD2_LONGORFS(SUPERTRANSCRIPTS.out.fasta)
+    TD2_LONGORFS(MMSEQS2_TAXONOMY.out.fasta)
 
     // Steps 7 & 8 run in parallel
     MMSEQS2_SEARCH_SWISSPROT(
@@ -177,7 +184,7 @@ workflow {
 
     // Step 9: TD2.Predict with combined homology hits
     TD2_PREDICT(
-        SUPERTRANSCRIPTS.out.fasta,
+        MMSEQS2_TAXONOMY.out.fasta,
         MMSEQS2_SEARCH_SWISSPROT.out.m8,
         MMSEQS2_SEARCH_PFAM.out.m8,
         TD2_LONGORFS.out.td2_dir
@@ -198,7 +205,7 @@ workflow {
     // ║  STEP 11: Salmon final quant on SuperTranscripts (gene-level)      ║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
-    SALMON_INDEX_FINAL(SUPERTRANSCRIPTS.out.fasta)
+    SALMON_INDEX_FINAL(MMSEQS2_TAXONOMY.out.fasta)
 
     SALMON_QUANT_FINAL(
         ch_reads_for_salmon,
@@ -238,8 +245,8 @@ workflow {
     THINNING_REPORT(
         ch_trinity,
         MMSEQS2_CLUSTER_NT.out.rep_fasta,
-        SUPERTRANSCRIPTS.out.fasta,
-        GROUPER.out.clust,
+        MMSEQS2_TAXONOMY.out.fasta,
+        CORSET.out.clust,
         SELECT_BEST_ORF.out.map,
         SELECT_BEST_ORF.out.faa,
         SALMON_QUANT_INITIAL.out.quant_dir.collect(),

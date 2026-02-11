@@ -18,9 +18,9 @@ A Nextflow DSL2 pipeline to collapse a fragmented Trinity *de novo* transcriptom
 | **SortMeRNA** | `community.wave.seqera.io/library/sortmerna:4.3.7` | **Matches nf-core/rnaseq v3.22.2** |
 | **Salmon** | `biocontainers/salmon:1.10.3--h6dccd9a_2` | **Matches nf-core/rnaseq v3.22.2** |
 | **MMseqs2** | `quay.io/biocontainers/mmseqs2:<tag>` | Biocontainers |
-| **Grouper** | `docker://combinelab/grouper` | Official Docker Hub image |
+| **Corset** | `quay.io/biocontainers/corset:1.09--h9f5acd7_5` | Biocontainers (bioconda) |
+| **Lace** | `quay.io/biocontainers/lace:1.14.1--pyhdfd78af_0` | Biocontainers (bioconda, includes BLAT) |
 | **TD2** | **Must build** (see below) | Not yet on biocontainers |
-| **Trinity** (SuperTranscripts util) | `quay.io/biocontainers/trinity:<tag>` | Only need the SuperTranscripts script |
 | **BUSCO** | `quay.io/biocontainers/busco:<tag>` | QC step |
 | **TransAnnot** | `quay.io/biocontainers/transannot:<tag>` | Functional annotation (SwissProt + Pfam + eggNOG) |
 | **AGAT** | [biocontainers](https://biocontainers.pro/tools/agat) | GFF/GTF annotation handling, filtering, QC |
@@ -101,15 +101,19 @@ apptainer build td2_1.0.8.sif docker-archive://<(docker save td2:1.0.8)
            (97% nt dedup)        │               │
                 │                ▼               │
                 │          SALMON_QUANT_INITIAL ◄┘
-                │           (per sample, --dumpEq --writeOrphanLinks)
+                │           (per sample, --hardFilter --dumpEq)
                 │                │
                 │                ▼
-                └──────► GROUPER ◄────────────┘
-                     (eq classes + clustered fasta)
+                └──────► CORSET ◄────────────┘
+                     (hierarchical clustering on eq classes)
                                │
                                ▼
-                      SUPERTRANSCRIPTS
-                     (one seq per gene group)
+                           LACE
+                     (one SuperTranscript per gene)
+                               │
+                               ▼
+                      MMSEQS2_TAXONOMY
+              (taxonomy + filtertaxdb → plant only)
                                │
                 ┌──────────────┼──────────────────┐
                 ▼              ▼                  ▼
@@ -262,7 +266,7 @@ salmon index -t ${deduped_fasta} -i salmon_idx --keepDuplicates -p ${task.cpus}
 
 ---
 
-### 3. `SALMON_QUANT_INITIAL` — Quantify each sample (with eq classes for Grouper)
+### 3. `SALMON_QUANT_INITIAL` — Quantify each sample (with eq classes for Corset)
 
 **Container:** `biocontainers/salmon:1.10.3--h6dccd9a_2` *(matches nf-core/rnaseq v3.22.2)*
 
@@ -273,82 +277,103 @@ salmon quant -i ${salmon_idx} -l A \
   -1 ${reads_1} -2 ${reads_2} \
   --validateMappings \
   --seqBias --gcBias --posBias \
-  --rangeFactorizationBins 4 \
-  --dumpEq --writeOrphanLinks \
+  --hardFilter \
+  --dumpEq \
   -p ${task.cpus} \
   -o ${sample_id}_quant
 ```
 
 **Input:** salmon index + per-sample read pairs
-**Output:** `${sample_id}_quant/` directories (containing `aux_info/eq_classes.txt`, `aux_info/orphan_links.txt`, `quant.sf`)
+**Output:** `${sample_id}_quant/` directories (containing `aux_info/eq_classes.txt`, `quant.sf`)
 
-**Critical:** Salmon must be run with `--dumpEq` and `--writeOrphanLinks` for Grouper.
+**Critical:** Salmon must be run with `--hardFilter` (disables range factorization) and `--dumpEq` for Corset. Do NOT use `--rangeFactorizationBins` — Corset requires equivalence classes without range factorization.
 
 **Resources:** `cpus: 8, memory: 16.GB, time: 4.h`
 
 ---
 
-### 4. `GROUPER` — Expression-aware transcript-to-gene clustering
+### 4. `CORSET` — Hierarchical transcript-to-gene clustering
 
-**Container:** `docker://combinelab/grouper`
+**Container:** `quay.io/biocontainers/corset:1.09--h9f5acd7_5`
 
-Grouper requires a YAML config file that lists conditions and sample quant directories. The pipeline must **dynamically generate** this config from the samplesheet.
+Corset uses Salmon equivalence classes and hierarchical clustering with condition-aware paralog splitting to group transcripts into genes.
 
 ```bash
-# Generate config.yaml from samplesheet (template task or inline script)
-Grouper --config config.yaml
+corset \
+  -i salmon_eq_classes \
+  -g ${conditions} \
+  -n ${sample_names} \
+  -p corset \
+  ${eq_classes_files}
 ```
 
-**Example `config.yaml`:**
-```yaml
-conditions:
-    - ConditionA
-    - ConditionB
-samples:
-    ConditionA:
-        - SampleA1_quant
-        - SampleA2_quant
-        - SampleA3_quant
-    ConditionB:
-        - SampleB1_quant
-        - SampleB2_quant
-        - SampleB3_quant
-outdir: grouper_out
-orphan: False
-mincut: False
-```
-
-**Input:** All `${sample_id}_quant/` directories + samplesheet metadata
-**Output:** `grouper_out/mag.flat.clust` (transcript → gene cluster mapping)
+**Input:** All `${sample_id}_quant/aux_info/eq_classes.txt` files + condition groupings
+**Output:** `corset-clusters.txt` (transcript → gene cluster mapping) + `corset-counts.txt` (gene-level raw counts)
 
 **Important notes:**
-- `orphan: False` and `mincut: False` recommended for high-quality assemblies. Make these pipeline params.
-- The `mag.flat.clust` file is a two-column TSV: `transcript_id\tcluster_id`
-- Grouper uses MCL internally and needs it available in the container (the Docker image has it).
+- The `-g` flag takes comma-separated condition labels (e.g., `T1_L,T1_L,T1_R,T2_L,...`)
+- The `-n` flag takes comma-separated sample names matching the eq_classes.txt file order
+- The `corset-clusters.txt` file is a two-column TSV: `transcript_id\tcluster_id`
+- Cluster IDs are hierarchical (e.g., `Cluster-1234.0`); sub-clusters arise from condition-aware paralog splitting
 
-**Resources:** `cpus: 4, memory: 32.GB, time: 4.h`
+**Resources:** `cpus: 4, memory: 64.GB, time: 8.h`
 
 ---
 
-### 5. `SUPERTRANSCRIPTS` — Merge transcripts per gene group
+### 5. `LACE` — Build SuperTranscripts from Corset clusters
 
-**Container:** `quay.io/biocontainers/trinity:<tag>` (ships the SuperTranscripts utility)
+**Container:** `quay.io/biocontainers/lace:1.14.1--pyhdfd78af_0` (includes BLAT dependency)
+
+Lace constructs SuperTranscripts by aligning transcripts within each cluster using BLAT and merging them into a non-redundant consensus sequence.
 
 ```bash
-# Convert Grouper mag.flat.clust to Trinity gene_trans_map format
-# mag.flat.clust format: transcript_id\tcluster_id
-# Trinity gene_trans_map format: gene_id\ttranscript_id
-awk '{print $2"\t"$1}' ${grouper_clust} > gene_trans_map.tsv
+Lace ${deduped_fasta} ${corset_clusters} \
+  -t --cores ${task.cpus} -o lace_out
 
-python \$TRINITY_HOME/Analysis/SuperTranscripts/Trinity_gene_splice_modeler.py \
-  --trinity_fasta ${deduped_fasta} \
-  --gene_trans_map gene_trans_map.tsv
+cp lace_out/SuperDuper.fasta supertranscripts.fasta
 ```
 
-**Input:** `trinity_clu_nt_rep_seq.fasta` + `grouper_out/mag.flat.clust`
-**Output:** `trinity_genes.fasta` (one SuperTranscript per gene)
+**Input:** deduplicated Trinity FASTA + `corset-clusters.txt`
+**Output:** `supertranscripts.fasta` (one SuperTranscript per gene)
 
-**Resources:** `cpus: 4, memory: 32.GB, time: 4.h`
+**Note:** Corset's clusters.txt format (`transcript\tcluster`) is natively compatible with Lace — no column reordering needed (unlike the former Grouper→Trinity conversion).
+
+**Resources:** `cpus: 8, memory: 64.GB, time: 8.h`
+
+---
+
+### 5b. `MMSEQS2_TAXONOMY` — Classify and filter SuperTranscripts by taxonomy
+
+**Container:** `quay.io/biocontainers/mmseqs2:<tag>` (matched by `MMSEQS2_.*` wildcard)
+
+Uses MMseqs2's native taxonomy workflow with `filtertaxdb` for hierarchical NCBI taxonomy filtering. More robust than grepping lineage strings — `filtertaxdb` uses the full NCBI taxonomy tree to include all descendants of the target taxon.
+
+```bash
+# Create query DB + run taxonomy assignment
+mmseqs createdb ${supertranscripts_fasta} queryDB
+mmseqs taxonomy queryDB ${taxonomy_db} taxResult tmp_tax \
+    --tax-lineage 1 -s 7.0 --threads ${task.cpus}
+
+# Export LCA report + Krona-compatible report
+mmseqs createtsv queryDB taxResult taxRes_lca.tsv
+mmseqs taxonomyreport ${taxonomy_db} taxResult taxRes_report
+
+# Filter by NCBI taxon ID (keeps all descendants)
+mmseqs filtertaxdb ${taxonomy_db} taxResult filteredTaxResult \
+    --taxon-list ${params.filter_taxon}
+
+# Extract matching sequences
+mmseqs createsubdb filteredTaxResult queryDB filteredDB
+mmseqs createsubdb filteredTaxResult queryDB_h filteredDB_h
+mmseqs convert2fasta filteredDB supertranscripts_filtered.fasta
+```
+
+**Input:** `supertranscripts.fasta` (Lace SuperTranscripts)
+**Output:** `supertranscripts_filtered.fasta` (plant-only), `taxRes_lca.tsv`, `taxRes_report`, `taxonomy_filter_stats.txt`
+
+**Key parameter:** `--filter_taxon 35493` (Streptophyta). Uses NCBI taxonomy hierarchy — all descendants are automatically included.
+
+**Resources:** `cpus: 16, memory: 64.GB, time: 8.h`
 
 ---
 
@@ -364,8 +389,8 @@ TD2.LongOrfs -t ${supertranscripts_fasta} -S
 - `-S` : sense-strand only (SuperTranscripts have known orientation)
 - Default minimum ORF: 90 aa
 
-**Input:** `trinity_genes.fasta` (SuperTranscripts)
-**Output:** `trinity_genes.fasta.TD2_dir/longest_orfs.pep` (+ `.cds`, `.gff3`)
+**Input:** `supertranscripts.fasta` (Lace SuperTranscripts)
+**Output:** `supertranscripts.fasta.TD2_dir/longest_orfs.pep` (+ `.cds`, `.gff3`)
 
 **Resources:** `cpus: 2, memory: 8.GB, time: 1.h`
 
@@ -640,14 +665,16 @@ params {
     mmseqs2_swissprot   = '/mnt/project/glowberry/transannot/db/SwissProtDB'
     mmseqs2_pfam        = '/mnt/project/glowberry/transannot/db/PfamDB'
     mmseqs2_eggnog      = '/mnt/project/glowberry/transannot/db/eggNOG7DB'
+    mmseqs2_taxonomy_db = '.../db/UniProtTrEMBLtaxdb'  // TrEMBL for taxonomy (broader coverage)
     busco_lineage       = 'poales_odb12'
 
     // --- Clustering params ---
     mmseqs2_nt_id       = 0.97         // Nucleotide dedup identity
     mmseqs2_nt_cov      = 0.8          // Nucleotide dedup coverage
     mmseqs2_search_sens = 7.0          // MMseqs2 search sensitivity for homology
-    grouper_orphan      = false        // Use orphan reads in Grouper
-    grouper_mincut      = false        // Use mincut filter in Grouper
+
+    // --- Taxonomy filter (NCBI taxon ID — includes all descendants) ---
+    filter_taxon      = 35493             // Streptophyta
 
     // --- TD2 params ---
     td2_min_orf_length  = 90           // Minimum ORF length (aa)
@@ -672,9 +699,9 @@ process {
     withName: 'SORTMERNA.*'        { container = sortmerna_container }
     withName: 'MMSEQS2_.*'         { container = 'quay.io/biocontainers/mmseqs2:15.6f452--pl5321h6a68c12_3' }
     withName: 'SALMON_.*'          { container = salmon_container }
-    withName: 'GROUPER'            { container = 'docker://combinelab/grouper' }
+    withName: 'CORSET'             { container = 'quay.io/biocontainers/corset:1.09--h9f5acd7_5' }
+    withName: 'LACE'               { container = 'quay.io/biocontainers/lace:1.14.1--pyhdfd78af_0' }
     withName: 'TD2_.*'             { container = '/path/to/td2_1.0.8.sif' }
-    withName: 'SUPERTRANSCRIPTS'   { container = 'quay.io/biocontainers/trinity:2.15.2--h6a8efc7_1' }
     withName: 'BUSCO_QC'           { container = 'ezlabgva/busco:v6.0.0_cv1' }
     withName: 'TRANSANNOT'         { container = 'quay.io/biocontainers/transannot:4.0.0--h4ac6f70_0' }
     withName: 'SELECT_BEST_ORF'    { container = 'quay.io/biocontainers/biopython:1.81' }
@@ -720,7 +747,9 @@ trinity-thinning/
 │   ├── mmseqs2_cluster_nt.nf
 │   ├── salmon_index.nf
 │   ├── salmon_quant.nf
-│   ├── grouper.nf
+│   ├── corset.nf
+│   ├── lace.nf
+│   ├── mmseqs2_taxonomy.nf
 │   ├── supertranscripts.nf
 │   ├── td2_longorfs.nf
 │   ├── mmseqs2_search.nf          # Reusable: parameterized by DB
@@ -746,11 +775,11 @@ trinity-thinning/
 
 ## Key Implementation Notes for Claude Code
 
-1. **Grouper config generation**: The `GROUPER` process needs a pre-step that reads the samplesheet CSV and dynamically generates a YAML config. This can be done as an inline Nextflow script block or a separate `GENERATE_GROUPER_CONFIG` process.
+1. **Corset condition flags**: The `CORSET` process builds `-g` (conditions) and `-n` (sample names) flags dynamically from the samplesheet metadata, similar to how Grouper's YAML config was generated.
 
-2. **Salmon `--dumpEq` + `--writeOrphanLinks`**: These are REQUIRED for Grouper. The initial Salmon quant must include both flags. The final Salmon quant (on SuperTranscripts) does NOT need them.
+2. **Salmon `--hardFilter` + `--dumpEq`**: These are REQUIRED for Corset. The `--hardFilter` flag disables range factorization, which is incompatible with Corset's clustering. The final Salmon quant (on SuperTranscripts) does NOT need them.
 
-3. **Grouper output → SuperTranscripts input**: The `mag.flat.clust` file has format `transcript_id\tcluster_id`. Trinity's SuperTranscript script expects `gene_id\ttranscript_id` — note the **column order is swapped**.
+3. **Corset output → Lace input**: Corset's `clusters.txt` has format `transcript_id\tcluster_id`. Lace natively reads this format — no column reordering needed.
 
 4. **TD2 working directory**: TD2 creates `${input_fasta}.TD2_dir/` in the directory where the input fasta lives. In Nextflow, use `stageInMode: 'copy'` or symlink carefully so TD2 can write alongside the input.
 
@@ -811,7 +840,7 @@ Existing nf-core/rnaseq samplesheets (CSV: `sample,fastq_1,fastq_2,strandedness`
 - Tissues: L (leaf), R (root)
 - All samples are `unstranded`
 
-**Condition for Grouper** = `{Timepoint}_{Tissue}` (e.g., `T2_L`, `T5_R`) — 10 conditions per species (5 timepoints x 2 tissues).
+**Condition for Corset** = `{Timepoint}_{Tissue}` (e.g., `T2_L`, `T5_R`) — 10 conditions per species (5 timepoints x 2 tissues).
 
 ### Databases (pre-built MMseqs2)
 
@@ -869,11 +898,14 @@ micromamba activate $HOME/micromamba/envs/Nextflow
 
 | File | Description | IDs match? |
 |------|-------------|------------|
-| `results/supertranscripts/trinity_genes.fasta` | One sequence per gene | Gene IDs |
+| `results/supertranscripts/supertranscripts.fasta` | One SuperTranscript per gene (all) | Gene IDs |
+| `results/taxonomy/supertranscripts_filtered.fasta` | Plant-only SuperTranscripts | Gene IDs |
+| `results/taxonomy/taxRes_lca.tsv` | MMseqs2 LCA taxonomy assignments | Gene IDs |
 | `results/salmon_final/{sample}_st_quant/quant.sf` | Gene-level counts | Gene IDs ✓ |
 | `results/proteins/species_X.faa` | One protein per gene | Gene IDs ✓ |
 | `results/annotation/best_orfs.gff3` | CDS on SuperTranscripts | Gene IDs as seqnames ✓ |
 | `results/annotation/orf_to_gene_map.tsv` | gene↔orf↔score↔length | Links all IDs |
-| `results/clustering/grouper_out/mag.flat.clust` | Transcript → gene map | — |
+| `results/clustering/corset-clusters.txt` | Transcript → gene map | — |
+| `results/clustering/corset-counts.txt` | Gene-level raw counts | Gene IDs |
 | `results/qc/busco_final/` | BUSCO completeness | — |
 | `results/transannot/${species}_transannot.tsv` | Functional annotation (SwissProt + Pfam + eggNOG) | Gene IDs ✓ |

@@ -21,8 +21,8 @@ process SALMON_QUANT_INITIAL {
         -1 ${reads_1} -2 ${reads_2} \\
         --validateMappings \\
         --seqBias --gcBias --posBias \\
-        --rangeFactorizationBins 4 \\
-        --dumpEq --writeOrphanLinks \\
+        --hardFilter \\
+        --dumpEq \\
         -p ${task.cpus} \\
         -o ${sample_id}_quant
     """

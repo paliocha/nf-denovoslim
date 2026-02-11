@@ -37,15 +37,19 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
            (97% nt dedup)        │               │
                 │                ▼               │
                 │          SALMON_QUANT_INITIAL ◄┘
-                │           (per sample, --dumpEq --writeOrphanLinks)
+                │           (per sample, --hardFilter --dumpEq)
                 │                │
                 │                ▼
-                └──────► GROUPER ◄────────────┘
-                     (eq classes + clustered fasta)
+                └──────► CORSET ◄────────────┘
+                     (hierarchical clustering on eq classes)
                                │
                                ▼
-                      SUPERTRANSCRIPTS
-                     (one seq per gene group)
+                           LACE
+                     (one SuperTranscript per gene)
+                               │
+                               ▼
+                      MMSEQS2_TAXONOMY
+              (taxonomy + filtertaxdb → plant only)
                                │
                 ┌──────────────┼──────────────────┐
                 ▼              ▼                  ▼
@@ -86,8 +90,9 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
 | 0 | rRNA filtering | SortMeRNA 4.3.7 |
 | 1 | Nucleotide deduplication (97% id) | MMseqs2 |
 | 2–3 | Initial quantification | Salmon 1.10.3 |
-| 4 | Expression-aware transcript→gene clustering | Grouper |
-| 5 | Merge transcripts per gene | Trinity SuperTranscripts |
+| 4 | Hierarchical transcript→gene clustering | Corset 1.09 |
+| 5 | Build SuperTranscripts per gene | Lace 1.14.1 |
+| 5b | Taxonomy filter (keep Streptophyta only) | MMseqs2 taxonomy + filtertaxdb |
 | 6–9 | ORF prediction with homology support | TD2 + MMseqs2 |
 | 10 | Best ORF selection (one protein per gene) | Python/BioPython |
 | 11 | Gene-level quantification | Salmon 1.10.3 |
@@ -100,7 +105,7 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
 
 - [Nextflow](https://www.nextflow.io/) >= 23.04
 - [Apptainer](https://apptainer.org/) (or Singularity/Docker)
-- Pre-built MMseqs2 databases: SwissProt, Pfam, eggNOG7
+- Pre-built MMseqs2 databases: SwissProt, Pfam, eggNOG7, UniProt/TrEMBL (for taxonomy)
 - Pre-built TD2 container (`containers/td2/td2_1.0.8.sif`)
 
 ## Usage
@@ -114,6 +119,7 @@ nextflow run main.nf \
     --mmseqs2_swissprot /path/to/SwissProtDB \
     --mmseqs2_pfam /path/to/PfamDB \
     --mmseqs2_eggnog /path/to/eggNOG7DB \
+    --mmseqs2_taxonomy_db /path/to/UniProtTrEMBLtaxdb \
     --outdir /path/to/results
 ```
 
@@ -126,7 +132,7 @@ sample,fastq_1,fastq_2,strandedness
 SPECIES01_T1_L,/path/to/R1.fq.gz,/path/to/R2.fq.gz,unstranded
 ```
 
-The `condition` for Grouper clustering is extracted automatically from the sample name as `{Timepoint}_{Tissue}` (e.g., `T1_L`).
+The `condition` for Corset clustering is extracted automatically from the sample name as `{Timepoint}_{Tissue}` (e.g., `T1_L`).
 
 ### Profiles
 
@@ -146,6 +152,7 @@ The `condition` for Grouper clustering is extracted automatically from the sampl
 | `--species_label` | `species_X` | Prefix for output files |
 | `--mmseqs2_nt_id` | `0.97` | Nucleotide dedup identity threshold |
 | `--mmseqs2_nt_cov` | `0.8` | Nucleotide dedup coverage threshold |
+| `--filter_taxon` | `35493` | NCBI taxon ID to keep (includes all descendants) |
 | `--busco_lineage` | `poales_odb12` | BUSCO lineage dataset |
 | `--outdir` | `./results` | Output directory |
 
@@ -160,6 +167,9 @@ mmseqs databases Pfam-A.full PfamDB tmp
 
 # eggNOG7 profiles
 mmseqs databases eggNOG eggNOG7DB tmp
+
+# UniProt/TrEMBL (for taxonomy classification — broader coverage than SwissProt)
+mmseqs databases UniProtKB/TrEMBL UniProtTrEMBLtaxdb tmp
 ```
 
 ## Building the TD2 container
@@ -181,10 +191,15 @@ results/
 ├── sortmerna/                            # Filtered reads (non-rRNA)
 ├── mmseqs2_nt/                           # Deduplicated assembly
 ├── clustering/
-│   └── grouper_out/
-│       └── mag.flat.clust                # Transcript→gene mapping (tx2gene)
+│   ├── corset-clusters.txt               # Transcript→gene mapping (tx2gene)
+│   └── corset-counts.txt                 # Gene-level raw counts
 ├── supertranscripts/
-│   └── trinity_genes.fasta               # One sequence per gene
+│   └── supertranscripts.fasta            # One SuperTranscript per gene
+├── taxonomy/
+│   ├── taxRes_lca.tsv                    # MMseqs2 LCA taxonomy assignments
+│   ├── taxRes_report                     # MMseqs2 taxonomy report
+│   ├── supertranscripts_filtered.fasta   # Plant-only SuperTranscripts
+│   └── taxonomy_filter_stats.txt         # Filter statistics
 ├── td2/                                  # ORF predictions
 ├── proteins/
 │   ├── SPECIES.faa                       # One best protein per gene
@@ -197,7 +212,7 @@ results/
 └── SPECIES_thinning_report.txt           # Pipeline summary
 ```
 
-Note: initial Salmon quantification (transcript-level, used internally by Grouper) is not published to the results directory.
+Note: initial Salmon quantification (transcript-level, used internally by Corset) is not published to the results directory.
 
 ## Using output with tximport (R/DESeq2)
 
@@ -222,7 +237,7 @@ txi <- tximport(files, type = "salmon", tx2gene = tx2gene)
 dds <- DESeqDataSetFromTximport(txi, colData = samples, design = ~ condition)
 ```
 
-The transcript→gene mapping from Grouper is available at `results/clustering/grouper_out/mag.flat.clust` (two columns: `transcript_id`, `gene_id`). This maps the original deduplicated Trinity transcripts to their gene clusters and can be used for transcript-level import if needed.
+The transcript→gene mapping from Corset is available at `results/clustering/corset-clusters.txt` (two columns: `transcript_id`, `cluster_id`). This maps the original deduplicated Trinity transcripts to their gene clusters and can be used for transcript-level import if needed.
 
 ## Author
 

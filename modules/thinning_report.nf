@@ -12,7 +12,7 @@ process THINNING_REPORT {
     path(trinity_fasta)
     path(deduped_fasta)
     path(supertranscripts_fasta)
-    path(grouper_clust)
+    path(corset_clust)
     path(orf_to_gene_map)
     path(faa)
     path(initial_quant_dirs)
@@ -39,7 +39,7 @@ process THINNING_REPORT {
         ${trinity_fasta} \\
         ${deduped_fasta} \\
         ${supertranscripts_fasta} \\
-        ${grouper_clust} \\
+        ${corset_clust} \\
         ${orf_to_gene_map} \\
         ${faa} \\
         ${init_dirs} \\
