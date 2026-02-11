@@ -13,30 +13,72 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
 - **Functional annotation** — SwissProt + Pfam + eggNOG via TransAnnot
 - **BUSCO completeness** assessment
 
-## Pipeline Steps
+## Pipeline DAG
 
 ```
-Reads ──► SortMeRNA (rRNA removal)
+                        (input reads)
+                               │
+                               ▼
+                      SORTMERNA_INDEX
+                 (build index from 8 rRNA DBs)
+                               │
+                               ▼
+                         SORTMERNA
+                    (per sample, remove rRNA)
+                               │
+                               ▼
+                      filtered reads (non-rRNA)
+                               │
+      trinity_assembly.fasta   │
+                │              │
+                ┌──────────────┼───────────────┐
+                ▼              ▼               ▼
+         MMSEQS2_CLUSTER_NT   SALMON_INDEX  (filtered reads)
+           (97% nt dedup)        │               │
+                │                ▼               │
+                │          SALMON_QUANT_INITIAL ◄┘
+                │           (per sample, --dumpEq --writeOrphanLinks)
+                │                │
+                │                ▼
+                └──────► GROUPER ◄────────────┘
+                     (eq classes + clustered fasta)
+                               │
+                               ▼
+                      SUPERTRANSCRIPTS
+                     (one seq per gene group)
+                               │
+                ┌──────────────┼──────────────────┐
+                ▼              ▼                  ▼
+         TD2_LONGORFS    SALMON_INDEX_FINAL  (filtered reads)
+                │              │                  │
+                ▼              ▼                  │
+         MMSEQS2_SEARCH  SALMON_QUANT_FINAL ◄────┘
+         (vs SwissProt      (gene-level)
+          + Pfam)                │
+                │                ▼
+                ▼          VALIDATE_IDS
+         TD2_PREDICT       (ID consistency)
+         (--retain-mmseqs-hits)
                 │
-Trinity.fasta   │
-    │           │
-    ├───► MMseqs2 97% nt dedup
-    │           │
-    │     Salmon index + quant (--dumpEq)
-    │           │
-    └───► Grouper (expression-aware gene clustering)
+                ▼
+         SELECT_BEST_ORF
+         (one protein per gene,
+          mapping file output)
                 │
-          SuperTranscripts (one seq per gene)
+                ├──► species_X.faa
+                ├──► best_orfs.gff3
+                ├──► orf_to_gene_map.tsv
                 │
-          TD2 ORF prediction (with SwissProt + Pfam homology)
-                │
-          Select best ORF per gene (PSAURON scoring)
-                │
-        ┌───────┼───────┐
-        │       │       │
-   Salmon    BUSCO   TransAnnot
-   (final)    QC    (SwissProt +
-                     Pfam + eggNOG)
+        ┌───────┴───────────┐
+        ▼                   ▼
+   BUSCO_QC            TRANSANNOT
+                  (.faa vs SwissProt
+                   + Pfam + eggNOG7
+                   in one step)
+                        │
+                        ▼
+                 THINNING_REPORT
+                (pipeline summary)
 ```
 
 | Step | Process | Tool |
