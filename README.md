@@ -178,21 +178,51 @@ apptainer build containers/td2/td2_1.0.8.sif docker-archive://td2.tar
 
 ```
 results/
-├── sortmerna/              # Filtered reads (non-rRNA)
-├── mmseqs2_nt/             # Deduplicated assembly
-├── salmon_initial/         # Transcript-level quant (for Grouper)
-├── grouper/                # Transcript→gene clustering
-├── supertranscripts/       # One sequence per gene
-├── td2/                    # ORF predictions
+├── sortmerna/                            # Filtered reads (non-rRNA)
+├── mmseqs2_nt/                           # Deduplicated assembly
+├── clustering/
+│   └── grouper_out/
+│       └── mag.flat.clust                # Transcript→gene mapping (tx2gene)
+├── supertranscripts/
+│   └── trinity_genes.fasta               # One sequence per gene
+├── td2/                                  # ORF predictions
 ├── proteins/
-│   ├── SPECIES.faa         # One best protein per gene
-│   ├── best_orfs.gff3      # ORF coordinates
-│   └── orf_to_gene_map.tsv # Gene↔ORF↔PSAURON mapping
-├── salmon_final/           # Gene-level quantification
-├── busco/                  # Completeness assessment
-├── transannot/             # Functional annotation
-└── report/                 # Pipeline summary
+│   ├── SPECIES.faa                       # One best protein per gene
+│   ├── best_orfs.gff3                    # ORF coordinates
+│   └── orf_to_gene_map.tsv              # Gene↔ORF↔PSAURON mapping
+├── salmon_final/
+│   └── {SAMPLE}_st_quant/quant.sf       # Gene-level quantification
+├── busco/                                # Completeness assessment
+├── transannot/                           # Functional annotation
+└── SPECIES_thinning_report.txt           # Pipeline summary
 ```
+
+Note: initial Salmon quantification (transcript-level, used internally by Grouper) is not published to the results directory.
+
+## Using output with tximport (R/DESeq2)
+
+The gene-level Salmon quantification on SuperTranscripts can be imported directly into R for differential expression analysis. Each SuperTranscript corresponds to one gene, so the `quant.sf` Name column matches the protein IDs in the `.faa`.
+
+```r
+library(tximport)
+library(DESeq2)
+
+# List all gene-level quant.sf files
+files <- list.files("results/salmon_final", pattern = "quant.sf",
+                     recursive = TRUE, full.names = TRUE)
+names(files) <- gsub("_st_quant$", "", basename(dirname(files)))
+
+# tx2gene: identity mapping (SuperTranscript = gene)
+tx2gene <- data.frame(
+  TXNAME = read.delim(files[1])$Name,
+  GENEID = read.delim(files[1])$Name
+)
+
+txi <- tximport(files, type = "salmon", tx2gene = tx2gene)
+dds <- DESeqDataSetFromTximport(txi, colData = samples, design = ~ condition)
+```
+
+The transcript→gene mapping from Grouper is available at `results/clustering/grouper_out/mag.flat.clust` (two columns: `transcript_id`, `gene_id`). This maps the original deduplicated Trinity transcripts to their gene clusters and can be used for transcript-level import if needed.
 
 ## Author
 
