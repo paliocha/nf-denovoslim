@@ -1,10 +1,16 @@
 /*
- * Salmon index — reusable for both initial and final indexing
+ * Salmon index — builds a Salmon index from a FASTA reference
+ *
+ * Usage with DSL2 aliasing:
+ *   include { SALMON_INDEX as SALMON_INDEX_INITIAL } from './modules/salmon_index'
+ *   include { SALMON_INDEX as SALMON_INDEX_FINAL   } from './modules/salmon_index'
+ *
+ * Per-alias flags via conf/base.config:
+ *   withName: 'SALMON_INDEX_INITIAL' { ext.args = '--keepDuplicates' }
  */
 
-process SALMON_INDEX_INITIAL {
-    label 'process_medium'
-    tag "initial"
+process SALMON_INDEX {
+    tag "${fasta.simpleName}"
 
     input:
     path(fasta)
@@ -13,30 +19,12 @@ process SALMON_INDEX_INITIAL {
     path("salmon_idx"), emit: index
 
     script:
+    def args = task.ext.args ?: ''
     """
     salmon index \\
         -t ${fasta} \\
         -i salmon_idx \\
-        --keepDuplicates \\
-        -p ${task.cpus}
-    """
-}
-
-process SALMON_INDEX_FINAL {
-    label 'process_medium'
-    tag "final"
-
-    input:
-    path(fasta)
-
-    output:
-    path("st_salmon_idx"), emit: index
-
-    script:
-    """
-    salmon index \\
-        -t ${fasta} \\
-        -i st_salmon_idx \\
+        ${args} \\
         -p ${task.cpus}
     """
 }

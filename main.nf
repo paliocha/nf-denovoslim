@@ -10,31 +10,29 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-nextflow.enable.dsl = 2
-
 // ──────────────────────────────────────────────────────────────────────────────
-//  Module imports
+//  Module imports (DSL2 aliasing for reusable processes)
 // ──────────────────────────────────────────────────────────────────────────────
 
-include { SORTMERNA_INDEX        } from './modules/sortmerna'
-include { SORTMERNA              } from './modules/sortmerna'
-include { MMSEQS2_CLUSTER_NT     } from './modules/mmseqs2_cluster_nt'
-include { SALMON_INDEX_INITIAL   } from './modules/salmon_index'
-include { SALMON_INDEX_FINAL     } from './modules/salmon_index'
-include { SALMON_QUANT_INITIAL   } from './modules/salmon_quant'
-include { SALMON_QUANT_FINAL     } from './modules/salmon_quant'
-include { CORSET                 } from './modules/corset'
-include { LACE                   } from './modules/lace'
-include { MMSEQS2_TAXONOMY       } from './modules/mmseqs2_taxonomy'
-include { TD2_LONGORFS           } from './modules/td2_longorfs'
-include { MMSEQS2_SEARCH_SWISSPROT } from './modules/mmseqs2_search'
-include { MMSEQS2_SEARCH_PFAM   } from './modules/mmseqs2_search'
-include { TD2_PREDICT            } from './modules/td2_predict'
-include { SELECT_BEST_ORF        } from './modules/select_best_orf'
-include { VALIDATE_IDS           } from './modules/validate_ids'
-include { BUSCO_QC               } from './modules/busco'
-include { TRANSANNOT             } from './modules/transannot'
-include { THINNING_REPORT        } from './modules/thinning_report'
+include { SORTMERNA_INDEX                            } from './modules/sortmerna'
+include { SORTMERNA                                  } from './modules/sortmerna'
+include { MMSEQS2_CLUSTER_NT                         } from './modules/mmseqs2_cluster_nt'
+include { SALMON_INDEX as SALMON_INDEX_INITIAL       } from './modules/salmon_index'
+include { SALMON_INDEX as SALMON_INDEX_FINAL         } from './modules/salmon_index'
+include { SALMON_QUANT as SALMON_QUANT_INITIAL       } from './modules/salmon_quant'
+include { SALMON_QUANT as SALMON_QUANT_FINAL         } from './modules/salmon_quant'
+include { CORSET                                     } from './modules/corset'
+include { LACE                                       } from './modules/lace'
+include { MMSEQS2_TAXONOMY                           } from './modules/mmseqs2_taxonomy'
+include { TD2_LONGORFS                               } from './modules/td2_longorfs'
+include { MMSEQS2_SEARCH as MMSEQS2_SEARCH_SWISSPROT } from './modules/mmseqs2_search'
+include { MMSEQS2_SEARCH as MMSEQS2_SEARCH_PFAM      } from './modules/mmseqs2_search'
+include { TD2_PREDICT                                } from './modules/td2_predict'
+include { SELECT_BEST_ORF                            } from './modules/select_best_orf'
+include { VALIDATE_IDS                               } from './modules/validate_ids'
+include { BUSCO_QC                                   } from './modules/busco'
+include { TRANSANNOT                                 } from './modules/transannot'
+include { THINNING_REPORT                            } from './modules/thinning_report'
 
 // ──────────────────────────────────────────────────────────────────────────────
 //  Input validation
@@ -131,7 +129,8 @@ workflow {
 
     SALMON_QUANT_INITIAL(
         ch_reads_for_salmon,
-        SALMON_INDEX_INITIAL.out.index
+        SALMON_INDEX_INITIAL.out.index,
+        'quant'
     )
 
     // ╔══════════════════════════════════════════════════════════════════════╗
@@ -171,15 +170,17 @@ workflow {
 
     TD2_LONGORFS(MMSEQS2_TAXONOMY.out.fasta)
 
-    // Steps 7 & 8 run in parallel
+    // Steps 7 & 8 run in parallel (DB paths passed as val — no staging of multi-GB DBs)
     MMSEQS2_SEARCH_SWISSPROT(
         TD2_LONGORFS.out.longest_orfs_pep,
-        Channel.fromPath("${params.mmseqs2_swissprot}*").collect()
+        params.mmseqs2_swissprot,
+        'swissprot'
     )
 
     MMSEQS2_SEARCH_PFAM(
         TD2_LONGORFS.out.longest_orfs_pep,
-        Channel.fromPath("${params.mmseqs2_pfam}*").collect()
+        params.mmseqs2_pfam,
+        'pfam'
     )
 
     // Step 9: TD2.Predict with combined homology hits
@@ -209,7 +210,8 @@ workflow {
 
     SALMON_QUANT_FINAL(
         ch_reads_for_salmon,
-        SALMON_INDEX_FINAL.out.index
+        SALMON_INDEX_FINAL.out.index,
+        'st_quant'
     )
 
     // ╔══════════════════════════════════════════════════════════════════════╗

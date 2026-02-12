@@ -1,51 +1,36 @@
 /*
- * MMseqs2 homology search — reusable for SwissProt and Pfam
+ * MMseqs2 homology search — parameterized for any target database
+ *
+ * Usage with DSL2 aliasing:
+ *   include { MMSEQS2_SEARCH as MMSEQS2_SEARCH_SWISSPROT } from './modules/mmseqs2_search'
+ *   include { MMSEQS2_SEARCH as MMSEQS2_SEARCH_PFAM      } from './modules/mmseqs2_search'
+ *
+ * The database path is passed as val() (not path()) to avoid staging
+ * multi-GB pre-built databases to scratch — they are read directly from
+ * the shared filesystem.
  */
 
-process MMSEQS2_SEARCH_SWISSPROT {
-    label 'process_high'
-    tag "swissprot"
+process MMSEQS2_SEARCH {
+    tag "${tag_name}"
 
     input:
     path(query_pep)
-    path(db, stageAs: 'swissprot_db/*')
+    val(db_path)
+    val(tag_name)
 
     output:
-    path("swissprot_alnRes.m8"), emit: m8
+    path("${tag_name}_alnRes.m8"), emit: m8
 
     script:
-    // The db path points to the directory; the actual DB prefix is the basename
-    def db_prefix = db.find { it.name.endsWith('.dbtype') || it.name == params.mmseqs2_swissprot.split('/')[-1] }
+    def args = task.ext.args ?: ''
     """
     mmseqs easy-search \\
         ${query_pep} \\
-        ${params.mmseqs2_swissprot} \\
-        swissprot_alnRes.m8 \\
-        tmp_sp \\
+        ${db_path} \\
+        ${tag_name}_alnRes.m8 \\
+        tmp_${tag_name} \\
         -s ${params.mmseqs2_search_sens} \\
-        --threads ${task.cpus}
-    """
-}
-
-process MMSEQS2_SEARCH_PFAM {
-    label 'process_high'
-    tag "pfam"
-
-    input:
-    path(query_pep)
-    path(db, stageAs: 'pfam_db/*')
-
-    output:
-    path("pfam_alnRes.m8"), emit: m8
-
-    script:
-    """
-    mmseqs easy-search \\
-        ${query_pep} \\
-        ${params.mmseqs2_pfam} \\
-        pfam_alnRes.m8 \\
-        tmp_pfam \\
-        -s ${params.mmseqs2_search_sens} \\
+        ${args} \\
         --threads ${task.cpus}
     """
 }
