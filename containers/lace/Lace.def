@@ -1,0 +1,29 @@
+Bootstrap: docker
+From: docker.io/mambaorg/micromamba:1.5.8
+
+%post
+    # Install Lace with NetworkX 2.x to fix 'DiGraph' object has no attribute 'node' error
+    # Pin matplotlib <3.6 to keep seaborn-deep style compatibility
+    micromamba install -y -n base -c conda-forge -c bioconda \
+        lace=1.14.1 \
+        "networkx>=2.8,<3.0" \
+        "matplotlib-base>=3.5,<3.6" \
+        && micromamba clean --all --yes
+
+%environment
+    export PATH="/opt/conda/bin:${PATH}"
+
+%labels
+    Author martpali
+    Version 1.14.1_nx2
+    Description Lace 1.14.1 with NetworkX 2.x compatibility fix
+
+%help
+    Custom Lace container with NetworkX 2.x to fix NetworkX 3.x incompatibility.
+
+    Lace 1.14.1 code uses NetworkX 2.x API (.node attribute) but the official
+    biocontainer ships with NetworkX 3.x (.nodes attribute), causing all
+    SuperTranscript construction to fail.
+
+    Usage:
+        apptainer exec lace_1.14.1_nx2.sif Lace input.fasta clusters.txt -o output/

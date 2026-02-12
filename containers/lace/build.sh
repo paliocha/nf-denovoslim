@@ -10,7 +10,7 @@ echo "Building Lace container with NetworkX 2.x fix..."
 echo "Output: lace_1.14.1_nx2.sif"
 
 # Build with Apptainer (on a compute node to avoid overloading login node)
-apptainer build lace_1.14.1_nx2.sif Dockerfile
+apptainer build lace_1.14.1_nx2.sif Lace.def
 
 echo "Done! Container: ${CONTAINER_DIR}/lace_1.14.1_nx2.sif"
 echo ""
