@@ -21,7 +21,8 @@ process LACE {
 
     script:
     """
-    export MPLCONFIGDIR=\$(mktemp -d)
+    export MPLCONFIGDIR=\$(mktemp -d -p /tmp)
+    export PYTHONUNBUFFERED=1
 
     Lace \\
         ${deduped_fasta} \\

@@ -716,6 +716,9 @@ params {
     mmseqs2_taxonomy_db = '.../db/UniProtTrEMBLtaxdb'  // TrEMBL for taxonomy (broader coverage)
     busco_lineage       = 'poales_odb12'
 
+    // --- Diamond DB for frameshift correction (.dmnd or protein FASTA) ---
+    diamond_db          = null  // REQUIRED — build: diamond makedb --in uniprot_sprot.fasta.gz -d swissprot
+
     // --- Clustering params ---
     mmseqs2_nt_id       = 0.97         // Nucleotide dedup identity
     mmseqs2_nt_cov      = 0.8          // Nucleotide dedup coverage
@@ -748,8 +751,9 @@ process {
     withName: 'MMSEQS2_.*'         { container = 'quay.io/biocontainers/mmseqs2:15.6f452--pl5321h6a68c12_3' }
     withName: 'SALMON_.*'          { container = salmon_container }
     withName: 'CORSET'             { container = 'quay.io/biocontainers/corset:1.09--h077b44d_6' }
-    withName: 'LACE'               { container = 'quay.io/biocontainers/lace:1.14.1--pyh5e36f6f_0' }
-    withName: 'TD2_.*'             { container = '/path/to/td2_1.0.8.sif' }
+    withName: 'LACE'                  { container = 'quay.io/biocontainers/lace:1.14.1--pyh5e36f6f_0' }
+    withName: 'FRAMESHIFT_CORRECTION' { container = 'quay.io/biocontainers/diamond:2.1.22--h13889ed_0' }
+    withName: 'TD2_.*'                { container = '/path/to/td2_1.0.8.sif' }
     withName: 'BUSCO_QC'           { container = 'ezlabgva/busco:v6.0.0_cv1' }
     withName: 'TRANSANNOT'         { container = 'quay.io/biocontainers/transannot:4.0.0--h4ac6f70_0' }
     withName: 'SELECT_BEST_ORF'    { container = 'quay.io/biocontainers/biopython:1.81' }
@@ -848,6 +852,14 @@ trinity-thinning/
    mmseqs databases UniProtKB/Swiss-Prot swissprot tmp
    mmseqs databases Pfam-A.full pfam tmp
    ```
+
+7b. **Diamond database** (`diamond_db`): Required for frameshift correction. Build from SwissProt FASTA:
+   ```bash
+   wget https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz
+   diamond makedb --in uniprot_sprot.fasta.gz -d swissprot
+   # → swissprot.dmnd — pass as --diamond_db /path/to/swissprot.dmnd
+   ```
+   Alternatively, pass any protein FASTA file (Diamond will auto-build the DB at runtime).
 
 8. **Apptainer from Docker**: For containers from Docker Hub/quay.io, Nextflow + Apptainer will auto-pull and convert. For the custom TD2 container, pre-build the `.sif` file and reference it by path.
 
