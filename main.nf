@@ -141,11 +141,14 @@ workflow {
     ch_all_quants = SALMON_QUANT_INITIAL.out.quant_dir.collect()
 
     // Build sample-condition metadata for Corset -g/-n flags
+    // Sort by condition (T1_L, T1_R, T2_L, ... T5_R) then by sample_id
     ch_sample_conditions = ch_filtered_reads
         .map { sample_id, condition, r1, r2 ->
             [ sample_id: sample_id, condition: condition ]
         }
-        .collect()
+        .toSortedList { a, b ->
+            a.condition <=> b.condition ?: a.sample_id <=> b.sample_id
+        }
 
     CORSET(ch_all_quants, ch_sample_conditions)
 
