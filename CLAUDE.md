@@ -18,8 +18,8 @@ A Nextflow DSL2 pipeline to collapse a fragmented Trinity *de novo* transcriptom
 | **SortMeRNA** | `community.wave.seqera.io/library/sortmerna:4.3.7` | **Matches nf-core/rnaseq v3.22.2** |
 | **Salmon** | `biocontainers/salmon:1.10.3--h6dccd9a_2` | **Matches nf-core/rnaseq v3.22.2** |
 | **MMseqs2** | `quay.io/biocontainers/mmseqs2:<tag>` | Biocontainers |
-| **Corset** | `quay.io/biocontainers/corset:1.09--h9f5acd7_5` | Biocontainers (bioconda) |
-| **Lace** | `quay.io/biocontainers/lace:1.14.1--pyhdfd78af_0` | Biocontainers (bioconda, includes BLAT) |
+| **Corset** | `quay.io/biocontainers/corset:1.09--h077b44d_6` | Biocontainers (bioconda) |
+| **Lace** | `quay.io/biocontainers/lace:1.14.1--pyh5e36f6f_0` | Biocontainers (bioconda, includes BLAT) |
 | **TD2** | **Must build** (see below) | Not yet on biocontainers |
 | **BUSCO** | `quay.io/biocontainers/busco:<tag>` | QC step |
 | **TransAnnot** | `quay.io/biocontainers/transannot:<tag>` | Functional annotation (SwissProt + Pfam + eggNOG) |
@@ -294,7 +294,7 @@ salmon quant -i ${salmon_idx} -l A \
 
 ### 4. `CORSET` — Hierarchical transcript-to-gene clustering
 
-**Container:** `quay.io/biocontainers/corset:1.09--h9f5acd7_5`
+**Container:** `quay.io/biocontainers/corset:1.09--h077b44d_6`
 
 Corset uses Salmon equivalence classes and hierarchical clustering with condition-aware paralog splitting to group transcripts into genes.
 
@@ -322,7 +322,7 @@ corset \
 
 ### 5. `LACE` — Build SuperTranscripts from Corset clusters
 
-**Container:** `quay.io/biocontainers/lace:1.14.1--pyhdfd78af_0` (includes BLAT dependency)
+**Container:** `quay.io/biocontainers/lace:1.14.1--pyh5e36f6f_0` (includes BLAT dependency)
 
 Lace constructs SuperTranscripts by aligning transcripts within each cluster using BLAT and merging them into a non-redundant consensus sequence.
 
@@ -699,8 +699,8 @@ process {
     withName: 'SORTMERNA.*'        { container = sortmerna_container }
     withName: 'MMSEQS2_.*'         { container = 'quay.io/biocontainers/mmseqs2:15.6f452--pl5321h6a68c12_3' }
     withName: 'SALMON_.*'          { container = salmon_container }
-    withName: 'CORSET'             { container = 'quay.io/biocontainers/corset:1.09--h9f5acd7_5' }
-    withName: 'LACE'               { container = 'quay.io/biocontainers/lace:1.14.1--pyhdfd78af_0' }
+    withName: 'CORSET'             { container = 'quay.io/biocontainers/corset:1.09--h077b44d_6' }
+    withName: 'LACE'               { container = 'quay.io/biocontainers/lace:1.14.1--pyh5e36f6f_0' }
     withName: 'TD2_.*'             { container = '/path/to/td2_1.0.8.sif' }
     withName: 'BUSCO_QC'           { container = 'ezlabgva/busco:v6.0.0_cv1' }
     withName: 'TRANSANNOT'         { container = 'quay.io/biocontainers/transannot:4.0.0--h4ac6f70_0' }
