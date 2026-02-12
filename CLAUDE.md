@@ -20,6 +20,7 @@ A Nextflow DSL2 pipeline to collapse a fragmented Trinity *de novo* transcriptom
 | **MMseqs2** | `quay.io/biocontainers/mmseqs2:<tag>` | Biocontainers |
 | **Corset** | `quay.io/biocontainers/corset:1.09--h077b44d_6` | Biocontainers (bioconda) |
 | **Lace** | `quay.io/biocontainers/lace:1.14.1--pyh5e36f6f_0` | Biocontainers (bioconda, includes BLAT) |
+| **Diamond** | `quay.io/biocontainers/diamond:2.1.22--h13889ed_0` | Frameshift correction (blastx -F 15) |
 | **TD2** | **Must build** (see below) | Not yet on biocontainers |
 | **BUSCO** | `quay.io/biocontainers/busco:<tag>` | QC step |
 | **TransAnnot** | `quay.io/biocontainers/transannot:<tag>` | Functional annotation (SwissProt + Pfam + eggNOG) |
@@ -114,6 +115,10 @@ apptainer build td2_1.0.8.sif docker-archive://<(docker save td2:1.0.8)
                                ▼
                       MMSEQS2_TAXONOMY
               (taxonomy + filtertaxdb → plant only)
+                               │
+                               ▼
+                   FRAMESHIFT_CORRECTION
+              (Diamond blastx -F 15 + fix frameshifts)
                                │
                 ┌──────────────┼──────────────────┐
                 ▼              ▼                  ▼
@@ -374,6 +379,49 @@ mmseqs convert2fasta filteredDB supertranscripts_filtered.fasta
 **Key parameter:** `--filter_taxon 35493` (Streptophyta). Uses NCBI taxonomy hierarchy — all descendants are automatically included.
 
 **Resources:** `cpus: 16, memory: 64.GB, time: 8.h`
+
+---
+
+### 5c. `FRAMESHIFT_CORRECTION` — Detect and correct assembly frameshifts
+
+**Container:** `quay.io/biocontainers/diamond:2.1.22--h13889ed_0`
+
+**Method:** Diamond blastx with frameshift-tolerant alignment (`-F 15`) + BTOP string parsing (based on Leder et al. 2021, *J Evol Biol* 34:138). Assembly-induced frameshifts (indels during Trinity assembly) are detected via Diamond's frameshift-aware protein alignment and corrected in-place:
+- `\` (+1 frameshift, extra base inserted) → **delete 1 base**
+- `/` (-1 frameshift, base missing) → **insert 1 N**
+
+This prevents TD2 from predicting fragmented ORFs due to premature stop codons or frame breaks.
+
+```bash
+# 1. Run Diamond blastx with frameshift-tolerant alignment
+diamond blastx \
+    -F 15 \
+    --sensitive \
+    --top 1 \
+    --min-score 50 \
+    -d ${diamond_db} \
+    -q ${supertranscripts_fasta} \
+    --outfmt 6 qseqid qstart qend qlen qframe btop \
+    -p ${task.cpus} \
+    -o diamond_fs.tsv
+
+# 2. Parse BTOP strings and correct frameshifts in-place
+correct_frameshifts.py \
+    ${supertranscripts_fasta} \
+    diamond_fs.tsv \
+    supertranscripts_corrected.fasta
+```
+
+**Input:** `supertranscripts_filtered.fasta` (plant-only SuperTranscripts)
+**Output:** `supertranscripts_corrected.fasta`, `frameshift_stats.txt`
+**Database:** `${params.diamond_db}` (SwissProt `.dmnd` file or protein FASTA — required parameter)
+
+**Resources:** `cpus: 16, memory: 32.GB, time: 4.h`
+
+**Notes:**
+- Only forward-strand hits (frames 1, 2, 3) are corrected — SuperTranscripts from Lace are correctly oriented
+- Sequences without Diamond hits pass through unchanged (novel, non-coding, or too divergent)
+- Corrected sequences are used for both TD2 ORF prediction AND Salmon final quantification
 
 ---
 
