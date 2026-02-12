@@ -21,6 +21,8 @@ process LACE {
 
     script:
     """
+    export MPLCONFIGDIR=\$(mktemp -d)
+
     Lace \\
         ${deduped_fasta} \\
         ${corset_clusters} \\
