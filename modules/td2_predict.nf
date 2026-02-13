@@ -27,6 +27,9 @@ process TD2_PREDICT {
     # Concatenate homology hits from both searches
     cat ${swissprot_m8} ${pfam_m8} > combined_alnRes.m8
 
+    # Ensure TD2_dir is where TD2.Predict expects it (beside the input fasta)
+    ln -sf ${td2_dir} ${supertranscripts_fasta}.TD2_dir
+
     TD2.Predict \\
         -t ${supertranscripts_fasta} \\
         --retain-mmseqs-hits combined_alnRes.m8
