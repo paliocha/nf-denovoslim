@@ -30,6 +30,7 @@ process MMSEQS2_SEARCH {
         ${tag_name}_alnRes.m8 \\
         tmp_${tag_name} \\
         -s ${params.mmseqs2_search_sens} \\
+        --split-memory-limit 120G \\
         ${args} \\
         --threads ${task.cpus}
     """

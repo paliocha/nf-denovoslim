@@ -36,6 +36,7 @@ process MMSEQS2_TAXONOMY {
     mmseqs taxonomy queryDB ${params.mmseqs2_taxonomy_db} taxResult tmp_tax \\
         --tax-lineage 1 \\
         -s ${params.mmseqs2_search_sens} \\
+        --split-memory-limit 120G \\
         --threads ${task.cpus}
 
     # 3. Export full LCA report as TSV (for downstream inspection)
