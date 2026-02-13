@@ -101,7 +101,7 @@ workflow {
     SORTMERNA(
         ch_reads_for_sortmerna,
         ch_sortmerna_fastas,
-        SORTMERNA_INDEX.out.index.first()
+        SORTMERNA_INDEX.out.index
     )
 
     // Recombine filtered reads with condition metadata
@@ -130,7 +130,7 @@ workflow {
 
     SALMON_QUANT_INITIAL(
         ch_reads_for_salmon,
-        SALMON_INDEX_INITIAL.out.index.first(),
+        SALMON_INDEX_INITIAL.out.index,
         'quant'
     )
 
@@ -220,7 +220,7 @@ workflow {
 
     SALMON_QUANT_FINAL(
         ch_reads_for_salmon,
-        SALMON_INDEX_FINAL.out.index.first(),
+        SALMON_INDEX_FINAL.out.index,
         'st_quant'
     )
 
