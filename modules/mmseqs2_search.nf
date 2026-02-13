@@ -23,6 +23,7 @@ process MMSEQS2_SEARCH {
 
     script:
     def args = task.ext.args ?: ''
+    def mem_gb = (task.memory.toGiga() * 0.85).intValue()  // 85% of allocated RAM
     """
     mmseqs easy-search \\
         ${query_pep} \\
@@ -30,7 +31,7 @@ process MMSEQS2_SEARCH {
         ${tag_name}_alnRes.m8 \\
         tmp_${tag_name} \\
         -s ${params.mmseqs2_search_sens} \\
-        --split-memory-limit 120G \\
+        --split-memory-limit ${mem_gb}G \\
         ${args} \\
         --threads ${task.cpus}
     """
