@@ -27,39 +27,39 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
                     (per sample, remove rRNA)
                                │
                                ▼
-                      filtered reads (non-rRNA)────────────────────┐
-                               │                                    │
-      trinity_assembly.fasta   │                                    │
-                │              │                                    │
-                ┌──────────────┼───────────────┐                   │
-                ▼              ▼               ▼                   │
-         MMSEQS2_CLUSTER_NT   SALMON_INDEX  (for initial quant)   │
-           (97% nt dedup)        │               │                 │
-                │                ▼               │                 │
-                │          SALMON_QUANT_INITIAL ◄┘                 │
-                │           (per sample, --hardFilter --dumpEq)    │
-                │                │                                 │
-                │                ▼                                 │
-                └──────► CORSET ◄────────────┘                     │
-                     (hierarchical clustering on eq classes)       │
-                               │                                   │
-                               ▼                                   │
-                           LACE                                    │
-                     (one SuperTranscript per gene)                │
-                               │                                   │
-                               ▼                                   │
-                      MMSEQS2_TAXONOMY                             │
-              (taxonomy + filtertaxdb → plant only)                │
-                               │                                   │
-                               ▼                                   │
-                   FRAMESHIFT_CORRECTION                           │
-              (Diamond blastx → fix assembly indels)               │
-                               │                                   │
-                ┌──────────────┼──────────────────┐                │
-                ▼              ▼                  ▼                │
-         TD2_LONGORFS    SALMON_INDEX_FINAL  (for final quant)    │
-                │              │                  │                │
-                ▼              ▼                  ▼                │
+                      filtered reads (non-rRNA)──────────────────┐
+                               │                                 │
+      trinity_assembly.fasta   │                                 │
+                │              │                                 │
+                ┌──────────────┼───────────────┐                 │
+                ▼              ▼               ▼                 │
+         MMSEQS2_CLUSTER_NT   SALMON_INDEX  (for initial quant)  │
+           (97% nt dedup)        │               │               │
+                │                ▼               │               │
+                │          SALMON_QUANT_INITIAL ◄┘               │
+                │           (per sample, --hardFilter --dumpEq)  │
+                │                │                               │
+                │                ▼                               │
+                └──────► CORSET ◄────────────┘                   │
+                     (hierarchical clustering on eq classes)     │
+                               │                                 │
+                               ▼                                 │
+                           LACE                                  │
+                     (one SuperTranscript per gene)              │
+                               │                                 │
+                               ▼                                 │
+                      MMSEQS2_TAXONOMY                           │
+              (taxonomy + filtertaxdb → plant only)              │
+                               │                                 │
+                               ▼                                 │
+                   FRAMESHIFT_CORRECTION                         │
+              (Diamond blastx → fix assembly indels)             │
+                               │                                 │
+                ┌──────────────┼──────────────────┐              │
+                ▼              ▼                  ▼              │
+         TD2_LONGORFS    SALMON_INDEX_FINAL  (for final quant)   │
+                │              │                  │              │
+                ▼              ▼                  ▼              │
          MMSEQS2_SEARCH  SALMON_QUANT_FINAL ◄────────────────────┘
          (vs SwissProt      (gene-level)
           + Pfam)                │
