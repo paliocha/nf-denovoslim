@@ -51,6 +51,10 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
                       MMSEQS2_TAXONOMY
               (taxonomy + filtertaxdb → plant only)
                                │
+                               ▼
+                   FRAMESHIFT_CORRECTION
+              (Diamond blastx → fix assembly indels)
+                               │
                 ┌──────────────┼──────────────────┐
                 ▼              ▼                  ▼
          TD2_LONGORFS    SALMON_INDEX_FINAL  (filtered reads)
@@ -93,6 +97,7 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
 | 4 | Hierarchical transcript→gene clustering | Corset 1.09 |
 | 5 | Build SuperTranscripts per gene | Lace 1.14.1 |
 | 5b | Taxonomy filter (keep Streptophyta only) | MMseqs2 taxonomy + filtertaxdb |
+| 5c | Frameshift correction (fix assembly indels) | Diamond blastx + Python |
 | 6–9 | ORF prediction with homology support | TD2 + MMseqs2 |
 | 10 | Best ORF selection (one protein per gene) | Python/BioPython |
 | 11 | Gene-level quantification | Salmon 1.10.3 |
@@ -106,7 +111,9 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
 - [Nextflow](https://www.nextflow.io/) >= 23.04
 - [Apptainer](https://apptainer.org/) (or Singularity/Docker)
 - Pre-built MMseqs2 databases: SwissProt, Pfam, eggNOG7, UniProt/TrEMBL (for taxonomy)
+- Pre-built Diamond database: UniRef90 (for frameshift correction)
 - Pre-built TD2 container (`containers/td2/td2_1.0.8.sif`)
+- Pre-built Lace container (`containers/lace/lace_1.14.1_nx2.sif`)
 
 ## Usage
 
@@ -120,6 +127,7 @@ nextflow run main.nf \
     --mmseqs2_pfam /path/to/PfamDB \
     --mmseqs2_eggnog /path/to/eggNOG7DB \
     --mmseqs2_taxonomy_db /path/to/UniProtTrEMBLtaxdb \
+    --diamond_db /path/to/uniref90.dmnd \
     --outdir /path/to/results
 ```
 
@@ -153,6 +161,7 @@ The `condition` for Corset clustering is extracted automatically from the sample
 | `--mmseqs2_nt_id` | `0.97` | Nucleotide dedup identity threshold |
 | `--mmseqs2_nt_cov` | `0.8` | Nucleotide dedup coverage threshold |
 | `--filter_taxon` | `35493` | NCBI taxon ID to keep (includes all descendants) |
+| `--diamond_db` | required | Path to Diamond database (e.g., UniRef90) for frameshift correction |
 | `--busco_lineage` | `poales_odb12` | BUSCO lineage dataset |
 | `--outdir` | `./results` | Output directory |
 
@@ -170,9 +179,15 @@ mmseqs databases eggNOG eggNOG7DB tmp
 
 # UniProt/TrEMBL (for taxonomy classification — broader coverage than SwissProt)
 mmseqs databases UniProtKB/TrEMBL UniProtTrEMBLtaxdb tmp
+
+# UniRef90 Diamond database (for frameshift correction)
+# Download and build using the provided script:
+sbatch build_uniref90_diamond.sh
 ```
 
-## Building the TD2 container
+## Building custom containers
+
+### TD2 container
 
 The TD2 (TransDecoder 2) container must be built from the included Dockerfile:
 
@@ -183,6 +198,17 @@ apptainer build containers/td2/td2_1.0.8.sif docker-archive://td2.tar
 # docker save td2:1.0.8 -o td2.tar
 # apptainer build td2_1.0.8.sif docker-archive://td2.tar
 ```
+
+### Lace container
+
+The Lace container uses NetworkX 2.x (compatible with Lace's API) and matplotlib 3.5.x (for seaborn-deep style):
+
+```bash
+cd containers/lace
+./build.sh
+```
+
+This builds `lace_1.14.1_nx2.sif` which fixes the NetworkX 3.x incompatibility in the official biocontainer.
 
 ## Output
 
@@ -200,6 +226,9 @@ results/
 │   ├── taxRes_report                     # MMseqs2 taxonomy report
 │   ├── supertranscripts_filtered.fasta   # Plant-only SuperTranscripts
 │   └── taxonomy_filter_stats.txt         # Filter statistics
+├── frameshift_correction/
+│   ├── supertranscripts_corrected.fasta  # Frameshifts fixed
+│   └── frameshift_corrections.log        # Correction statistics
 ├── td2/                                  # ORF predictions
 ├── proteins/
 │   ├── SPECIES.faa                       # One best protein per gene
