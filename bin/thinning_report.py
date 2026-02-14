@@ -257,6 +257,15 @@ def main():
                 r.write(f"  {label:<30} {len(lens):>8,} {statistics.mean(lens):>10,.1f} "
                         f"{statistics.median(lens):>10,.1f} "
                         f"{min(lens):>8,} {max(lens):>10,}\n")
+
+        # Length increase from Trinity to SuperTranscripts
+        if trinity_lengths and st_lengths:
+            trinity_median = statistics.median(trinity_lengths)
+            st_median = statistics.median(st_lengths)
+            median_increase = (st_median - trinity_median) / trinity_median * 100
+            r.write(f"\n  Median length increase (Trinity → LACE): "
+                    f"{trinity_median:,.0f} bp → {st_median:,.0f} bp "
+                    f"(+{median_increase:.1f}%, {st_median/trinity_median:.1f}x)\n")
         r.write("\n")
 
         # --- Section 4: Protein/ORF stats ---
