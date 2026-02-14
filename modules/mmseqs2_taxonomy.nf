@@ -33,7 +33,7 @@ process MMSEQS2_TAXONOMY {
     mmseqs createdb ${supertranscripts_fasta} queryDB
 
     # 2. Taxonomy assignment via LCA against UniProt/TrEMBL (6-frame translation)
-    MEM_GB=\$(echo "${task.memory.toGiga()} * 85 / 100" | bc)
+    MEM_GB=\$(( ${task.memory.toGiga()} * 85 / 100 ))
     mmseqs taxonomy queryDB ${params.mmseqs2_taxonomy_db} taxResult tmp_tax \\
         --tax-lineage 1 \\
         -s ${params.mmseqs2_search_sens} \\
