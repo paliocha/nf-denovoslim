@@ -24,7 +24,7 @@ include { SALMON_QUANT as SALMON_QUANT_FINAL         } from './modules/salmon_qu
 include { CORSET                                     } from './modules/corset'
 include { LACE                                       } from './modules/lace'
 include { MMSEQS2_TAXONOMY_CHUNKED                   } from './subworkflows/mmseqs2_taxonomy_chunked'
-include { FRAMESHIFT_CORRECTION                                      } from './modules/frameshift_correction'
+include { FRAMESHIFT_CORRECTION_CHUNKED              } from './subworkflows/frameshift_correction_chunked'
 include { TD2_LONGORFS                                               } from './modules/td2_longorfs'
 include { MMSEQS2_SEARCH_CHUNKED as MMSEQS2_SEARCH_CHUNKED_SWISSPROT } from './subworkflows/mmseqs2_search_chunked'
 include { MMSEQS2_SEARCH_CHUNKED as MMSEQS2_SEARCH_CHUNKED_PFAM      } from './subworkflows/mmseqs2_search_chunked'
@@ -171,15 +171,16 @@ workflow {
 
     // ╔══════════════════════════════════════════════════════════════════════╗
     // ║  STEP 5c: Frameshift correction — fix assembly frameshifts         ║
+    // ║  (Chunked processing: 3-5× speedup, 8h → ~2h)                      ║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
-    FRAMESHIFT_CORRECTION(MMSEQS2_TAXONOMY_CHUNKED.out.fasta)
+    FRAMESHIFT_CORRECTION_CHUNKED(MMSEQS2_TAXONOMY_CHUNKED.out.fasta)
 
     // ╔══════════════════════════════════════════════════════════════════════╗
     // ║  STEP 6-9: TD2 ORF prediction with homology support                ║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
-    TD2_LONGORFS(FRAMESHIFT_CORRECTION.out.fasta)
+    TD2_LONGORFS(FRAMESHIFT_CORRECTION_CHUNKED.out.fasta)
 
     // Steps 7 & 8 run in parallel with chunking for 5-8× speedup
     // (DB paths passed as val — no staging of multi-GB DBs)
