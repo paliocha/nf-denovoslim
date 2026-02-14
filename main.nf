@@ -198,7 +198,7 @@ workflow {
 
     // Step 9: TD2.Predict with combined homology hits
     TD2_PREDICT(
-        FRAMESHIFT_CORRECTION.out.fasta,
+        FRAMESHIFT_CORRECTION_CHUNKED.out.fasta,
         MMSEQS2_SEARCH_CHUNKED_SWISSPROT.out.m8,
         MMSEQS2_SEARCH_CHUNKED_PFAM.out.m8,
         TD2_LONGORFS.out.td2_dir
@@ -219,7 +219,7 @@ workflow {
     // ║  STEP 11: Salmon final quant on SuperTranscripts (gene-level)      ║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
-    SALMON_INDEX_FINAL(FRAMESHIFT_CORRECTION.out.fasta)
+    SALMON_INDEX_FINAL(FRAMESHIFT_CORRECTION_CHUNKED.out.fasta)
 
     SALMON_QUANT_FINAL(
         ch_reads_for_salmon,
@@ -260,7 +260,7 @@ workflow {
     THINNING_REPORT(
         ch_trinity,
         MMSEQS2_CLUSTER_NT.out.rep_fasta,
-        FRAMESHIFT_CORRECTION.out.fasta,
+        FRAMESHIFT_CORRECTION_CHUNKED.out.fasta,
         CORSET.out.clust,
         SELECT_BEST_ORF.out.map,
         SELECT_BEST_ORF.out.faa,
