@@ -24,6 +24,7 @@ process TD2_LONGORFS {
     TD2.LongOrfs \\
         -t ${supertranscripts_fasta} \\
         ${strand_flag} \\
-        -m ${params.td2_min_orf_length}
+        -m ${params.td2_min_orf_length} \\
+        --threads ${task.cpus}
     """
 }
