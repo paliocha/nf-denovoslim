@@ -2,28 +2,30 @@ Bootstrap: docker
 From: docker.io/mambaorg/micromamba:1.5.8
 
 %post
-    # Install Lace with NetworkX 2.x to fix 'DiGraph' object has no attribute 'node' error
-    # Pin matplotlib <3.6 to keep seaborn-deep style compatibility
+    # Install Lace and dependencies
     micromamba install -y -n base -c conda-forge -c bioconda \
         lace=1.14.1 \
-        "networkx>=2.8,<3.0" \
-        "matplotlib-base>=3.5,<3.6" \
         && micromamba clean --all --yes
+
+    # Patch Lace source: replace deprecated .node[ with .nodes[
+    # NetworkX 2.8+ and 3.x removed the .node attribute entirely
+    sed -i 's/\.node\[/\.nodes\[/g' \
+        /opt/conda/lib/python3.*/site-packages/Lace/BuildSuperTranscript.py
 
 %environment
     export PATH="/opt/conda/bin:${PATH}"
 
 %labels
     Author martpali
-    Version 1.14.1_nx2
-    Description Lace 1.14.1 with NetworkX 2.x compatibility fix
+    Version 1.14.1_patched
+    Description Lace 1.14.1 patched for NetworkX 3.x compatibility
 
 %help
-    Custom Lace container with NetworkX 2.x to fix NetworkX 3.x incompatibility.
+    Custom Lace container with patched BuildSuperTranscript.py.
 
-    Lace 1.14.1 code uses NetworkX 2.x API (.node attribute) but the official
-    biocontainer ships with NetworkX 3.x (.nodes attribute), causing all
-    SuperTranscript construction to fail.
+    The upstream Lace 1.14.1 uses the deprecated NetworkX .node attribute
+    which was removed in NetworkX 3.x. This container patches all
+    occurrences of .node[ to .nodes[ so SuperTranscript construction works.
 
     Usage:
-        apptainer exec lace_1.14.1_nx2.sif Lace input.fasta clusters.txt -o output/
+        apptainer exec lace_1.14.1_patched.sif Lace input.fasta clusters.txt -o output/
