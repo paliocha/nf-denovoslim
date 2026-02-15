@@ -211,8 +211,8 @@ def main():
             overall_pct = total_rrna / total_reads * 100 if total_reads > 0 else 0.0
 
             r.write(f"  Samples processed:    {len(sortmerna_stats)}\n")
-            r.write(f"  Total read pairs:     {fmt(total_reads)}\n")
-            r.write(f"  rRNA read pairs:      {fmt(total_rrna)}  ({overall_pct:.2f}%)\n")
+            r.write(f"  Total reads:          {fmt(total_reads)}\n")
+            r.write(f"  rRNA reads:           {fmt(total_rrna)}  ({overall_pct:.2f}%)\n")
             r.write(f"  Non-rRNA (kept):      {fmt(total_kept)}  ({100 - overall_pct:.2f}%)\n\n")
 
             pct_values = [s['pct_rrna'] for s in sortmerna_stats]
