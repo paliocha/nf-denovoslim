@@ -105,12 +105,10 @@ workflow {
     )
 
     // Recombine filtered reads with condition metadata
+    // Derive condition directly from sample_id to avoid channel fork/join issues with -resume
     ch_filtered_reads = SORTMERNA.out.reads
-        .join(
-            ch_samplesheet.map { sample_id, condition, r1, r2 -> [ sample_id, condition ] }
-        )
-        .map { sample_id, r1, r2, condition ->
-            [ sample_id, condition, r1, r2 ]
+        .map { sample_id, r1, r2 ->
+            [ sample_id, extractCondition(sample_id), r1, r2 ]
         }
 
     // ╔══════════════════════════════════════════════════════════════════════╗
