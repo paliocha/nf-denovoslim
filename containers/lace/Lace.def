@@ -3,8 +3,10 @@ From: docker.io/mambaorg/micromamba:1.5.8
 
 %post
     # Install Lace and dependencies
+    # Pin matplotlib-base <3.6 to keep 'seaborn-deep' style (renamed in 3.6+)
     micromamba install -y -n base -c conda-forge -c bioconda \
         lace=1.14.1 \
+        "matplotlib-base>=3.5,<3.6" \
         && micromamba clean --all --yes
 
     # Patch Lace source: replace deprecated .node[ with .nodes[
