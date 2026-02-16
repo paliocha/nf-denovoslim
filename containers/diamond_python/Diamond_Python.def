@@ -1,0 +1,16 @@
+Bootstrap: docker
+From: docker.io/mambaorg/micromamba:1.5.8
+
+%post
+    micromamba install -y -n base -c conda-forge -c bioconda \
+        diamond=2.1.22 \
+        python>=3.9 \
+        && micromamba clean --all --yes
+
+%environment
+    export PATH="/opt/conda/bin:${PATH}"
+
+%labels
+    Author martpali
+    Version diamond_2.1.22_python3
+    Description Diamond 2.1.22 with Python3 for frameshift correction
