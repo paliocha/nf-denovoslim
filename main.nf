@@ -140,10 +140,13 @@ workflow {
     ch_all_quants = SALMON_QUANT_INITIAL.out.quant_dir.collect()
 
     // Build sample-condition metadata for Corset -g/-n flags
-    // Sort by condition (T1_L, T1_R, T2_L, ... T5_R) then by sample_id
-    ch_sample_conditions = ch_filtered_reads
-        .map { sample_id, condition, r1, r2 ->
-            [ sample_id: sample_id, condition: condition ]
+    // Derived from samplesheet directly (not ch_filtered_reads) to avoid
+    // DSL2 queue-channel fork that splits items between consumers
+    ch_sample_conditions = Channel
+        .fromPath(params.samplesheet, checkIfExists: true)
+        .splitCsv(header: true)
+        .map { row ->
+            [ sample_id: row.sample, condition: extractCondition(row.sample) ]
         }
         .toSortedList { a, b ->
             a.condition <=> b.condition ?: a.sample_id <=> b.sample_id
