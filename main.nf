@@ -128,7 +128,7 @@ workflow {
 
     SALMON_QUANT_INITIAL(
         ch_reads_for_salmon,
-        SALMON_INDEX_INITIAL.out.index,
+        SALMON_INDEX_INITIAL.out.index.first(),
         'quant'
     )
 
@@ -224,7 +224,7 @@ workflow {
 
     SALMON_QUANT_FINAL(
         ch_reads_for_salmon,
-        SALMON_INDEX_FINAL.out.index,
+        SALMON_INDEX_FINAL.out.index.first(),
         'st_quant'
     )
 
