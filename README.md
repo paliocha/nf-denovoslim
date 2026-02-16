@@ -17,74 +17,77 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
 
 ```
                         (input reads)
-                               │
-                               ▼
+                               |
+                               v
                       SORTMERNA_INDEX
                  (build index from 8 rRNA DBs)
-                               │
-                               ▼
+                               |
+                               v
                          SORTMERNA
                     (per sample, remove rRNA)
-                               │
-                               ▼
-                      filtered reads (non-rRNA)──────────────────┐
-                               │                                 │
-      trinity_assembly.fasta   │                                 │
-                │              │                                 │
-                ┌──────────────┼───────────────┐                 │
-                ▼              ▼               ▼                 │
-         MMSEQS2_CLUSTER_NT   SALMON_INDEX  (for initial quant)  │
-           (97% nt dedup)        │               │               │
-                │                ▼               │               │
-                │          SALMON_QUANT_INITIAL ◄┘               │
-                │           (per sample, --hardFilter --dumpEq)  │
-                │                │                               │
-                │                ▼                               │
-                └──────► CORSET ◄────────────┘                   │
-                     (hierarchical clustering on eq classes)     │
-                               │                                 │
-                               ▼                                 │
-                           LACE                                  │
-                     (one SuperTranscript per gene)              │
-                               │                                 │
-                               ▼                                 │
-                      MMSEQS2_TAXONOMY                           │
-              (taxonomy + filtertaxdb → plant only)              │
-                               │                                 │
-                               ▼                                 │
-                   FRAMESHIFT_CORRECTION                         │
-              (Diamond blastx → fix assembly indels)             │
-                               │                                 │
-                ┌──────────────┼──────────────────┐              │
-                ▼              ▼                  ▼              │
-         TD2_LONGORFS    SALMON_INDEX_FINAL  (for final quant)   │
-                │              │                  │              │
-                ▼              ▼                  ▼              │
-         MMSEQS2_SEARCH  SALMON_QUANT_FINAL ◄────────────────────┘
-         (vs SwissProt      (gene-level)
-          + Pfam)                │
-                │                ▼
-                ▼          VALIDATE_IDS
-         TD2_PREDICT       (ID consistency)
+                               |
+                               v
+                      filtered reads (non-rRNA)------------------+
+                               |                                 |
+      trinity_assembly.fasta   |                                 |
+                |              |                                 |
+                +--------------+---------------+                 |
+                v              v               v                 |
+         MMSEQS2_CLUSTER_NT   SALMON_INDEX  (for initial quant)  |
+           (97% nt dedup)        |               |               |
+                |                v               |               |
+                |          SALMON_QUANT_INITIAL <-+               |
+                |           (per sample, --hardFilter --dumpEq)  |
+                |                |                               |
+                |                v                               |
+                +--------> CORSET <-----------+                  |
+                     (hierarchical clustering on eq classes)     |
+                               |                                 |
+                               v                                 |
+                           LACE                                  |
+                     (one SuperTranscript per gene)              |
+                               |                                 |
+                               v                                 |
+                  MMSEQS2_TAXONOMY_CHUNKED                       |
+          (split -> taxonomy + filter -> merge)                  |
+                  (keep Streptophyta only)                       |
+                               |                                 |
+                               v                                 |
+               FRAMESHIFT_CORRECTION_CHUNKED                     |
+          (split -> Diamond blastx -> correct -> merge)          |
+               (fix assembly indels)                             |
+                               |                                 |
+                +--------------+------------------+              |
+                v              v                  v              |
+         TD2_LONGORFS    SALMON_INDEX_FINAL  (for final quant)   |
+                |              |                  |              |
+                v              v                  v              |
+  MMSEQS2_SEARCH_CHUNKED  SALMON_QUANT_FINAL <-------------------+
+   (split -> search         (gene-level)
+    -> merge)                    |
+   (vs SwissProt + Pfam)        v
+                |          VALIDATE_IDS
+                v          (ID consistency)
+         TD2_PREDICT
          (--retain-mmseqs-hits)
-                │
-                ▼
+                |
+                v
          SELECT_BEST_ORF
          (one protein per gene,
           mapping file output)
-                │
-                ├──► species_X.faa
-                ├──► best_orfs.gff3
-                ├──► orf_to_gene_map.tsv
-                │
-        ┌───────┴───────────┐
-        ▼                   ▼
+                |
+                +---> species_X.faa
+                +---> best_orfs.gff3
+                +---> orf_to_gene_map.tsv
+                |
+        +-------+-----------+
+        v                   v
    BUSCO_QC            TRANSANNOT
                   (.faa vs SwissProt
                    + Pfam + eggNOG7
                    in one step)
-                        │
-                        ▼
+                        |
+                        v
                  THINNING_REPORT
                 (pipeline summary)
 ```
@@ -93,18 +96,20 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
 |------|---------|------|
 | 0 | rRNA filtering | SortMeRNA 4.3.7 |
 | 1 | Nucleotide deduplication (97% id) | MMseqs2 |
-| 2–3 | Initial quantification | Salmon 1.10.3 |
-| 4 | Hierarchical transcript→gene clustering | Corset 1.09 |
+| 2-3 | Initial quantification | Salmon 1.10.3 |
+| 4 | Hierarchical transcript-to-gene clustering | Corset 1.09 |
 | 5 | Build SuperTranscripts per gene | Lace 1.14.1 |
-| 5b | Taxonomy filter (keep Streptophyta only) | MMseqs2 taxonomy + filtertaxdb |
-| 5c | Frameshift correction (fix assembly indels) | Diamond blastx + Python |
-| 6–9 | ORF prediction with homology support | TD2 + MMseqs2 |
+| 5b | Taxonomy filter (keep Streptophyta only, chunked) | MMseqs2 taxonomy + filtertaxdb |
+| 5c | Frameshift correction (fix assembly indels, chunked) | Diamond blastx + Python |
+| 6-9 | ORF prediction with homology support (chunked search) | TD2 + MMseqs2 |
 | 10 | Best ORF selection (one protein per gene) | Python/BioPython |
 | 11 | Gene-level quantification | Salmon 1.10.3 |
 | 12 | ID consistency validation | bash/awk |
 | 13 | Protein completeness | BUSCO v6 |
 | 14 | Functional annotation | TransAnnot (SwissProt + Pfam + eggNOG7) |
 | 15 | Summary report | Python |
+
+Steps 5b, 5c, and 6-9 use data-level parallelization: input sequences are split into chunks, processed in parallel, and merged. This provides 3-10x wall-clock speedup on HPC clusters.
 
 ## Requirements
 
@@ -113,7 +118,7 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
 - Pre-built MMseqs2 databases: SwissProt, Pfam, eggNOG7, UniProt/TrEMBL (for taxonomy)
 - Pre-built Diamond database: UniRef90 (for frameshift correction)
 - Pre-built TD2 container (`containers/td2/td2_1.0.8.sif`)
-- Pre-built Lace container (`containers/lace/lace_1.14.1_nx2.sif`)
+- Pre-built Lace container (`containers/lace/lace_1.14.1_patched.sif`)
 
 ## Usage
 
@@ -163,7 +168,17 @@ The `condition` for Corset clustering is extracted automatically from the sample
 | `--filter_taxon` | `35493` | NCBI taxon ID to keep (includes all descendants) |
 | `--diamond_db` | required | Path to Diamond database (e.g., UniRef90) for frameshift correction |
 | `--busco_lineage` | `poales_odb12` | BUSCO lineage dataset |
+| `--sortmerna_db_dir` | `null` | Pre-downloaded rRNA database dir (skips download) |
 | `--outdir` | `./results` | Output directory |
+
+#### Chunking parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--search_orf_chunk_size` | `40000` | ORFs per chunk for MMseqs2 search |
+| `--taxonomy_chunk_size` | `2000` | SuperTranscripts per chunk for MMseqs2 taxonomy |
+| `--max_parallel_search_chunks` | `8` | Max simultaneous search chunk jobs |
+| `--max_parallel_taxonomy_chunks` | `8` | Max simultaneous taxonomy chunk jobs |
 
 ## Pre-building databases
 
@@ -177,7 +192,7 @@ mmseqs databases Pfam-A.full PfamDB tmp
 # eggNOG7 profiles
 mmseqs databases eggNOG eggNOG7DB tmp
 
-# UniProt/TrEMBL (for taxonomy classification — broader coverage than SwissProt)
+# UniProt/TrEMBL (for taxonomy classification -- broader coverage than SwissProt)
 mmseqs databases UniProtKB/TrEMBL UniProtTrEMBLtaxdb tmp
 
 # UniRef90 Diamond database (for frameshift correction)
@@ -201,47 +216,47 @@ apptainer build containers/td2/td2_1.0.8.sif docker-archive://td2.tar
 
 ### Lace container
 
-The Lace container uses NetworkX 2.x (compatible with Lace's API) and matplotlib 3.5.x (for seaborn-deep style):
+The Lace container patches Lace 1.14.1 for NetworkX 3.x compatibility (`.node` -> `.nodes`) and pins matplotlib <3.6 (for the `seaborn-deep` style):
 
 ```bash
 cd containers/lace
 ./build.sh
 ```
 
-This builds `lace_1.14.1_nx2.sif` which fixes the NetworkX 3.x incompatibility in the official biocontainer.
+This builds `lace_1.14.1_patched.sif`.
 
 ## Output
 
 ```
 results/
-├── sortmerna/                            # Filtered reads (non-rRNA)
-├── mmseqs2_nt/                           # Deduplicated assembly
 ├── clustering/
-│   ├── corset-clusters.txt               # Transcript→gene mapping (tx2gene)
+│   ├── corset-clusters.txt               # Transcript-to-gene mapping (tx2gene)
 │   └── corset-counts.txt                 # Gene-level raw counts
 ├── supertranscripts/
 │   └── supertranscripts.fasta            # One SuperTranscript per gene
 ├── taxonomy/
 │   ├── taxRes_lca.tsv                    # MMseqs2 LCA taxonomy assignments
-│   ├── taxRes_report                     # MMseqs2 taxonomy report
 │   ├── supertranscripts_filtered.fasta   # Plant-only SuperTranscripts
 │   └── taxonomy_filter_stats.txt         # Filter statistics
 ├── frameshift_correction/
-│   ├── supertranscripts_corrected.fasta  # Frameshifts fixed
-│   └── frameshift_corrections.log        # Correction statistics
-├── td2/                                  # ORF predictions
+│   └── frameshift_stats.txt              # Correction statistics
+├── mmseqs2_search/
+│   ├── swissprot_alnRes.m8               # SwissProt homology hits
+│   └── pfam_alnRes.m8                    # Pfam homology hits
 ├── proteins/
-│   ├── SPECIES.faa                       # One best protein per gene
+│   └── SPECIES.faa                       # One best protein per gene
+├── annotation/
 │   ├── best_orfs.gff3                    # ORF coordinates
-│   └── orf_to_gene_map.tsv              # Gene↔ORF↔PSAURON mapping
+│   └── orf_to_gene_map.tsv              # Gene-to-ORF-to-PSAURON mapping
 ├── salmon_final/
 │   └── {SAMPLE}_st_quant/quant.sf       # Gene-level quantification
-├── busco/                                # Completeness assessment
+├── qc/
+│   └── busco/                            # BUSCO completeness assessment
 ├── transannot/                           # Functional annotation
 └── SPECIES_thinning_report.txt           # Pipeline summary
 ```
 
-Note: initial Salmon quantification (transcript-level, used internally by Corset) is not published to the results directory.
+Note: initial Salmon quantification (transcript-level, used internally by Corset) and SortMeRNA filtered reads are not published to the results directory.
 
 ## Using output with tximport (R/DESeq2)
 
@@ -266,8 +281,8 @@ txi <- tximport(files, type = "salmon", tx2gene = tx2gene)
 dds <- DESeqDataSetFromTximport(txi, colData = samples, design = ~ condition)
 ```
 
-The transcript→gene mapping from Corset is available at `results/clustering/corset-clusters.txt` (two columns: `transcript_id`, `cluster_id`). This maps the original deduplicated Trinity transcripts to their gene clusters and can be used for transcript-level import if needed.
+The transcript-to-gene mapping from Corset is available at `results/clustering/corset-clusters.txt` (two columns: `transcript_id`, `cluster_id`). This maps the original deduplicated Trinity transcripts to their gene clusters and can be used for transcript-level import if needed.
 
 ## Author
 
-Martin Paliocha — [NMBU](https://www.nmbu.no/)
+Martin Paliocha -- [NMBU](https://www.nmbu.no/)
