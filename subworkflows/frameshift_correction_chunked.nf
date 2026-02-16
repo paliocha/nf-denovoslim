@@ -3,11 +3,15 @@
  *
  * Splits SuperTranscripts into chunks, runs Diamond blastx + frameshift
  * correction in parallel, and merges results. Provides same output as
- * FRAMESHIFT_CORRECTION but with 3-5× speedup (8h → ~2h).
+ * FRAMESHIFT_CORRECTION but with 3-5x speedup (8h -> ~2h).
+ *
+ * Diamond and Python correction are separate processes so that Diamond
+ * results stay cached if the Python step needs to be re-run.
  */
 
 include { SPLIT_SUPERTRANSCRIPTS_FS    } from '../modules/frameshift_correction_chunked'
-include { FRAMESHIFT_CORRECTION_CHUNK  } from '../modules/frameshift_correction_chunked'
+include { DIAMOND_BLASTX_CHUNK         } from '../modules/frameshift_correction_chunked'
+include { CORRECT_FRAMESHIFTS_CHUNK    } from '../modules/frameshift_correction_chunked'
 include { MERGE_FRAMESHIFT_RESULTS     } from '../modules/frameshift_correction_chunked'
 
 workflow FRAMESHIFT_CORRECTION_CHUNKED {
@@ -26,13 +30,16 @@ workflow FRAMESHIFT_CORRECTION_CHUNKED {
             tuple(chunk_idx, chunk_file)
         }
 
-    // Step 3: Run Diamond + frameshift correction on each chunk in parallel
-    FRAMESHIFT_CORRECTION_CHUNK(ch_chunks)
+    // Step 3: Run Diamond blastx on each chunk (heavy computation, cached independently)
+    DIAMOND_BLASTX_CHUNK(ch_chunks)
 
-    // Step 4: Merge all chunk results
+    // Step 4: Apply frameshift corrections using Python (lightweight, separate cache)
+    CORRECT_FRAMESHIFTS_CHUNK(DIAMOND_BLASTX_CHUNK.out.results)
+
+    // Step 5: Merge all chunk results
     MERGE_FRAMESHIFT_RESULTS(
-        FRAMESHIFT_CORRECTION_CHUNK.out.fasta.map { idx, fasta -> fasta }.collect(),
-        FRAMESHIFT_CORRECTION_CHUNK.out.stats.collect()
+        CORRECT_FRAMESHIFTS_CHUNK.out.fasta.map { idx, fasta -> fasta }.collect(),
+        CORRECT_FRAMESHIFTS_CHUNK.out.stats.collect()
     )
 
     emit:

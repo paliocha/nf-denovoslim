@@ -2,8 +2,11 @@
  * FRAMESHIFT_CORRECTION with chunking for parallel execution
  *
  * Splits SuperTranscripts into chunks, runs Diamond blastx and frameshift
- * correction in parallel, then merges results. Provides 3-5× speedup
- * (8h → ~2h) with better fault tolerance.
+ * correction in parallel, then merges results. Provides 3-5x speedup
+ * (8h -> ~2h) with better fault tolerance.
+ *
+ * Diamond and Python correction are separate processes so that Diamond
+ * results stay cached if the Python step fails.
  */
 
 process SPLIT_SUPERTRANSCRIPTS_FS {
@@ -46,19 +49,18 @@ process SPLIT_SUPERTRANSCRIPTS_FS {
     """
 }
 
-process FRAMESHIFT_CORRECTION_CHUNK {
+process DIAMOND_BLASTX_CHUNK {
     tag "${params.species_label}_chunk_${chunk_idx}"
 
     input:
     tuple val(chunk_idx), path(chunk_fasta)
 
     output:
-    tuple val(chunk_idx), path("corrected_${chunk_idx}.fasta"), emit: fasta
-    path("stats_${chunk_idx}.txt"),                              emit: stats
+    tuple val(chunk_idx), path(chunk_fasta), path("diamond_fs_${chunk_idx}.tsv"), emit: results
 
     script:
     """
-    # 1. Prepare Diamond DB (same as original)
+    # Prepare Diamond DB
     DB_PATH="${params.diamond_db}"
     if [ -z "\$DB_PATH" ] || [ "\$DB_PATH" = "null" ]; then
         echo "ERROR: --diamond_db is required." >&2
@@ -68,12 +70,11 @@ process FRAMESHIFT_CORRECTION_CHUNK {
     if [[ "\$DB_PATH" == *.dmnd ]]; then
         DIAMOND_DB="\$DB_PATH"
     else
-        # Build Diamond DB from FASTA
         diamond makedb --in \$DB_PATH -d diamond_ref -p ${task.cpus}
         DIAMOND_DB="diamond_ref"
     fi
 
-    # 2. Run Diamond blastx with frameshift-tolerant alignment
+    # Run Diamond blastx with frameshift-tolerant alignment
     diamond blastx \\
         -F 15 \\
         --sensitive \\
@@ -84,11 +85,24 @@ process FRAMESHIFT_CORRECTION_CHUNK {
         --outfmt 6 qseqid qstart qend qlen qframe btop \\
         -p ${task.cpus} \\
         -o diamond_fs_${chunk_idx}.tsv
+    """
+}
 
-    # 3. Parse BTOP strings and correct frameshifts
+process CORRECT_FRAMESHIFTS_CHUNK {
+    tag "${params.species_label}_chunk_${chunk_idx}"
+
+    input:
+    tuple val(chunk_idx), path(chunk_fasta), path(diamond_tsv)
+
+    output:
+    tuple val(chunk_idx), path("corrected_${chunk_idx}.fasta"), emit: fasta
+    path("stats_${chunk_idx}.txt"),                              emit: stats
+
+    script:
+    """
     correct_frameshifts.py \\
         ${chunk_fasta} \\
-        diamond_fs_${chunk_idx}.tsv \\
+        ${diamond_tsv} \\
         corrected_${chunk_idx}.fasta \\
         > stats_${chunk_idx}.txt
 
