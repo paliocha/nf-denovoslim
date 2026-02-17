@@ -36,7 +36,7 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
          MMSEQS2_CLUSTER_NT   SALMON_INDEX  (for initial quant)  |
            (97% nt dedup)        |               |               |
                 |                v               |               |
-                |          SALMON_QUANT_INITIAL <-+               |
+                |          SALMON_QUANT_INITIAL <-+              |
                 |           (per sample, --hardFilter --dumpEq)  |
                 |                |                               |
                 |                v                               |
@@ -44,7 +44,7 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
                      (hierarchical clustering on eq classes)     |
                                |                                 |
                                v                                 |
-                           LACE                                  |
+                              LACE                               |
                      (one SuperTranscript per gene)              |
                                |                                 |
                                v                                 |

@@ -14,14 +14,13 @@ process MMSEQS2_CLUSTER_NT {
     path("trinity_clu_nt_cluster.tsv"),   emit: cluster_tsv
 
     script:
+    def args = task.ext.args ?: ''
     """
     mmseqs easy-cluster \\
         ${trinity_fasta} \\
         trinity_clu_nt \\
         tmp_nt \\
-        --min-seq-id ${params.mmseqs2_nt_id} \\
-        -c ${params.mmseqs2_nt_cov} \\
-        --cov-mode 1 \\
+        ${args} \\
         --threads ${task.cpus}
     """
 }

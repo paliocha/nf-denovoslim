@@ -4,11 +4,12 @@
 
 process VALIDATE_IDS {
     label 'process_low'
-    tag "${params.species_label}"
+    tag "${species_label}"
 
     input:
     path(quant_sf)
     path(faa)
+    val(species_label)
 
     output:
     path("id_validation.txt"), emit: report

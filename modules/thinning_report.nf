@@ -6,8 +6,6 @@ process THINNING_REPORT {
     label 'process_low'
     tag "${species_label}"
 
-    publishDir "${params.outdir}", mode: 'copy'
-
     input:
     path(trinity_fasta)
     path(deduped_fasta)

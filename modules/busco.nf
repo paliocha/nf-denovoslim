@@ -4,22 +4,22 @@
 
 process BUSCO_QC {
     label 'process_high'
-    tag "${params.species_label}"
-
-    publishDir "${params.outdir}/qc", mode: 'copy'
+    tag "${species_label}"
 
     input:
     path(faa)
+    val(species_label)
 
     output:
     path("busco_final"),              emit: outdir
     path("busco_final/short_summary*"), emit: summary
 
     script:
+    def args = task.ext.args ?: ''
     """
     busco \\
         -i ${faa} \\
-        -l ${params.busco_lineage} \\
+        ${args} \\
         -m proteins \\
         -o busco_final \\
         -c ${task.cpus}

@@ -5,7 +5,8 @@
 #SBATCH --mem=8G
 #SBATCH --time=14-00:00:00
 #SBATCH --job-name=denovoslim-FPRA
-#SBATCH --output=denovoslim-FPRA_%A.out
+#SBATCH --output=%x_%A.out
+#SBATCH --chdir=/net/fs-2/scale/OrionStore/Home/martpali/AnnualPerennial/nf-denovoslim/runs/FPRA
 
 source ~/.bashrc
 eval "$(micromamba shell hook --shell bash)"
@@ -21,7 +22,7 @@ mkdir -p $LAUNCH_DIR
 cd $LAUNCH_DIR
 
 nextflow run $PIPELINE_DIR/main.nf \
-    -profile apptainer,slurm \
+    -profile apptainer,orion \
     -resume \
     -ansi-log false \
     -w $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/FPRA/work \

@@ -4,7 +4,7 @@
 
 process TD2_PREDICT {
     label 'process_medium'
-    tag "${params.species_label}"
+    tag "${species_label}"
 
     // TD2 writes outputs beside the input fasta
     stageInMode 'copy'
@@ -14,6 +14,7 @@ process TD2_PREDICT {
     path(swissprot_m8)
     path(pfam_m8)
     path(td2_dir)
+    val(species_label)
 
     output:
     path("${supertranscripts_fasta}.TD2.pep"),              emit: pep

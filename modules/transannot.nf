@@ -20,12 +20,13 @@ process TRANSANNOT {
     label 'process_high'
     tag "${species_label}"
 
-    publishDir "${params.outdir}/transannot", mode: 'copy'
-
     input:
     path(faa)
     path(eggnog_annot)
     val(species_label)
+    val(pfam_db)
+    val(eggnog_db)
+    val(swissprot_db)
 
     output:
     path("${species_label}_transannot.tsv"), emit: annotation
@@ -60,9 +61,9 @@ WRAPPER
 
     transannot annotate \\
         queryDB \\
-        ${params.mmseqs2_pfam} \\
-        ${params.mmseqs2_eggnog} \\
-        ${params.mmseqs2_swissprot} \\
+        ${pfam_db} \\
+        ${eggnog_db} \\
+        ${swissprot_db} \\
         ${species_label}_transannot_raw.tsv \\
         tmp_annotate \\
         --no-run-clust \\
@@ -84,7 +85,7 @@ WRAPPER
         # Re-generate profile search TSV (was deleted by annotate.sh)
         transannot convertalis \\
             "\$ANNOT_TMP/clu_rep" \\
-            ${params.mmseqs2_eggnog} \\
+            ${eggnog_db} \\
             "\$ANNOT_TMP/prof2_searchDB" \\
             prof2_regen.tsv \\
             --format-output "query,target,qstart,qend,theader,evalue,pident,bits" \\

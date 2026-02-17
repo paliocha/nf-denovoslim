@@ -4,11 +4,7 @@
 
 process SELECT_BEST_ORF {
     label 'process_low'
-    tag "${params.species_label}"
-
-    publishDir "${params.outdir}/proteins",   mode: 'copy', pattern: '*.faa'
-    publishDir "${params.outdir}/annotation", mode: 'copy', pattern: '*.gff3'
-    publishDir "${params.outdir}/annotation", mode: 'copy', pattern: '*.tsv'
+    tag "${species_label}"
 
     input:
     path(psauron_scores)

@@ -17,7 +17,7 @@ process SPLIT_ORFS {
     path("chunks/orf_chunk_*.pep"), emit: chunks
 
     script:
-    def chunk_size = params.search_orf_chunk_size ?: 40000
+    def chunk_size = task.ext.chunk_size ?: 40000
     """
     mkdir -p chunks
 
@@ -59,7 +59,6 @@ process MMSEQS2_SEARCH_CHUNK {
         ${db_path} \\
         ${tag_name}_chunk_${chunk_idx}.m8 \\
         tmp_${tag_name}_${chunk_idx} \\
-        -s ${params.mmseqs2_search_sens} \\
         --split-memory-limit ${mem_gb}G \\
         ${args} \\
         --threads ${task.cpus}
@@ -68,7 +67,6 @@ process MMSEQS2_SEARCH_CHUNK {
 
 process MERGE_M8_RESULTS {
     tag "${tag_name}"
-    publishDir "${params.outdir}/mmseqs2_search", mode: 'copy', pattern: "*.m8"
 
     input:
     path("chunk_*.m8")

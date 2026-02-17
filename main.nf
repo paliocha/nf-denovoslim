@@ -23,8 +23,9 @@ include { SALMON_QUANT as SALMON_QUANT_INITIAL       } from './modules/salmon_qu
 include { SALMON_QUANT as SALMON_QUANT_FINAL         } from './modules/salmon_quant'
 include { CORSET                                     } from './modules/corset'
 include { LACE                                       } from './modules/lace'
-include { MMSEQS2_TAXONOMY_CHUNKED                   } from './subworkflows/mmseqs2_taxonomy_chunked'
-include { FRAMESHIFT_CORRECTION_CHUNKED              } from './subworkflows/frameshift_correction_chunked'
+include { MMSEQS2_TAXONOMY                            } from './modules/mmseqs2_taxonomy'
+include { DIAMOND_BLASTX                              } from './modules/frameshift_correction'
+include { CORRECT_FRAMESHIFTS                          } from './modules/frameshift_correction'
 include { TD2_LONGORFS                                               } from './modules/td2_longorfs'
 include { MMSEQS2_SEARCH_CHUNKED as MMSEQS2_SEARCH_CHUNKED_SWISSPROT } from './subworkflows/mmseqs2_search_chunked'
 include { MMSEQS2_SEARCH_CHUNKED as MMSEQS2_SEARCH_CHUNKED_PFAM      } from './subworkflows/mmseqs2_search_chunked'
@@ -152,7 +153,7 @@ workflow {
             a.condition <=> b.condition ?: a.sample_id <=> b.sample_id
         }
 
-    CORSET(ch_all_quants, ch_sample_conditions)
+    CORSET(ch_all_quants, ch_sample_conditions, params.species_label)
 
     // ╔══════════════════════════════════════════════════════════════════════╗
     // ║  STEP 5: Lace — build SuperTranscripts from Corset clusters        ║
@@ -160,28 +161,36 @@ workflow {
 
     LACE(
         MMSEQS2_CLUSTER_NT.out.rep_fasta,
-        CORSET.out.clust
+        CORSET.out.clust,
+        params.species_label
     )
 
     // ╔══════════════════════════════════════════════════════════════════════╗
     // ║  STEP 5b: Taxonomy filter — keep only Streptophyta SuperTranscripts║
-    // ║  (Chunked processing: 5-10× speedup, 24h → 3-4h)                   ║
+    // ║  (Single process on node-local SSD for fast DB I/O)                ║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
-    MMSEQS2_TAXONOMY_CHUNKED(LACE.out.fasta)
+    MMSEQS2_TAXONOMY(
+        LACE.out.fasta,
+        params.mmseqs2_taxonomy_db,
+        params.mmseqs2_search_sens,
+        params.filter_taxon,
+        params.species_label
+    )
 
     // ╔══════════════════════════════════════════════════════════════════════╗
     // ║  STEP 5c: Frameshift correction — fix assembly frameshifts         ║
-    // ║  (Chunked processing: 3-5× speedup, 8h → ~2h)                      ║
+    // ║  (Diamond DB copied to node-local SSD; correction cached separately)║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
-    FRAMESHIFT_CORRECTION_CHUNKED(MMSEQS2_TAXONOMY_CHUNKED.out.fasta)
+    DIAMOND_BLASTX(MMSEQS2_TAXONOMY.out.fasta, params.diamond_db, params.species_label)
+    CORRECT_FRAMESHIFTS(MMSEQS2_TAXONOMY.out.fasta, DIAMOND_BLASTX.out.tsv, params.species_label)
 
     // ╔══════════════════════════════════════════════════════════════════════╗
     // ║  STEP 6-9: TD2 ORF prediction with homology support                ║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
-    TD2_LONGORFS(FRAMESHIFT_CORRECTION_CHUNKED.out.fasta)
+    TD2_LONGORFS(CORRECT_FRAMESHIFTS.out.fasta, params.species_label)
 
     // Steps 7 & 8 run in parallel with chunking for 5-8× speedup
     // (DB paths passed as val — no staging of multi-GB DBs)
@@ -199,10 +208,11 @@ workflow {
 
     // Step 9: TD2.Predict with combined homology hits
     TD2_PREDICT(
-        FRAMESHIFT_CORRECTION_CHUNKED.out.fasta,
+        CORRECT_FRAMESHIFTS.out.fasta,
         MMSEQS2_SEARCH_CHUNKED_SWISSPROT.out.m8,
         MMSEQS2_SEARCH_CHUNKED_PFAM.out.m8,
-        TD2_LONGORFS.out.td2_dir
+        TD2_LONGORFS.out.td2_dir,
+        params.species_label
     )
 
     // ╔══════════════════════════════════════════════════════════════════════╗
@@ -220,7 +230,7 @@ workflow {
     // ║  STEP 11: Salmon final quant on SuperTranscripts (gene-level)      ║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
-    SALMON_INDEX_FINAL(FRAMESHIFT_CORRECTION_CHUNKED.out.fasta)
+    SALMON_INDEX_FINAL(CORRECT_FRAMESHIFTS.out.fasta)
 
     SALMON_QUANT_FINAL(
         ch_reads_for_salmon,
@@ -239,19 +249,23 @@ workflow {
 
     VALIDATE_IDS(
         ch_first_quant_sf,
-        SELECT_BEST_ORF.out.faa
+        SELECT_BEST_ORF.out.faa,
+        params.species_label
     )
 
     // ╔══════════════════════════════════════════════════════════════════════╗
     // ║  STEP 13-14: BUSCO QC + TransAnnot (run in parallel)               ║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
-    BUSCO_QC(SELECT_BEST_ORF.out.faa)
+    BUSCO_QC(SELECT_BEST_ORF.out.faa, params.species_label)
 
     TRANSANNOT(
         SELECT_BEST_ORF.out.faa,
         file(params.eggnog_annotations, checkIfExists: true),
-        params.species_label
+        params.species_label,
+        params.mmseqs2_pfam,
+        params.mmseqs2_eggnog,
+        params.mmseqs2_swissprot
     )
 
     // ╔══════════════════════════════════════════════════════════════════════╗
@@ -261,7 +275,7 @@ workflow {
     THINNING_REPORT(
         ch_trinity,
         MMSEQS2_CLUSTER_NT.out.rep_fasta,
-        FRAMESHIFT_CORRECTION_CHUNKED.out.fasta,
+        CORRECT_FRAMESHIFTS.out.fasta,
         CORSET.out.clust,
         SELECT_BEST_ORF.out.map,
         SELECT_BEST_ORF.out.faa,

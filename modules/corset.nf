@@ -5,13 +5,12 @@
 
 process CORSET {
     label 'process_high'
-    tag "${params.species_label}"
-
-    publishDir "${params.outdir}/clustering", mode: 'copy'
+    tag "${species_label}"
 
     input:
     path(quant_dirs)
     val(sample_conditions)   // list of maps: [[sample_id: X, condition: Y], ...]
+    val(species_label)
 
     output:
     path("corset-clusters.txt"), emit: clust

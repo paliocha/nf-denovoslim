@@ -8,13 +8,12 @@
 
 process LACE {
     label 'process_high'
-    tag "${params.species_label}"
-
-    publishDir "${params.outdir}/supertranscripts", mode: 'copy'
+    tag "${species_label}"
 
     input:
     path(deduped_fasta)
     path(corset_clusters)
+    val(species_label)
 
     output:
     path("supertranscripts.fasta"), emit: fasta
