@@ -21,6 +21,9 @@ LAUNCH_DIR=$HOME/AnnualPerennial/nf-denovoslim/runs/BMED
 mkdir -p $LAUNCH_DIR
 cd $LAUNCH_DIR
 
+# Run under fjellheimlab group so all files (work dirs, staging, outputs)
+# count against the 40T project quota, not the 500G personal quota.
+sg fjellheimlab -c "
 nextflow run $PIPELINE_DIR/main.nf \
     -profile apptainer,orion \
     -resume \
@@ -36,3 +39,4 @@ nextflow run $PIPELINE_DIR/main.nf \
     --diamond_db $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/uniref90.dmnd \
     --filter_taxon 35493 \
     --outdir $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/BMED
+"

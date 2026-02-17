@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:orion.nmbu.no)",
+      "Bash(scontrol show:*)",
+      "Bash(sinfo:*)",
+      "Bash(module list)",
+      "Bash(mount:*)",
+      "Read(//mnt/**)",
+      "Read(//net/fs-2/scale/OrionStore/Home/martpali/AnnualPerennial/nf-denovoslim/**)",
+      "Bash(df:*)",
+      "Bash(readlink:*)",
+      "Bash(srun:*)",
+      "WebFetch(domain:support.nmbu.no)",
+      "Bash(ls:*)",
+      "Bash(du:*)",
+      "Bash(curl:*)",
+      "Bash(python3 -m json.tool:*)",
+      "Bash(python3 -c \" import sys, json data = json.load\\(sys.stdin\\) content = data[''data''][''pages''][''single''][''content''] print\\(content\\) \")",
+      "Bash(python3 -c \" import sys, json data = json.load\\(sys.stdin\\) content = data[''data''][''pages''][''single''][''content''] print\\(content[:8000]\\) \")",
+      "Bash(python3 -c \" import sys, json data = json.load\\(sys.stdin\\) for p in data[''data''][''pages''][''list'']: if ''file'' in p[''path''].lower\\(\\) or ''storage'' in p[''path''].lower\\(\\) or ''submit'' in p[''path''].lower\\(\\) or ''tmpdir'' in p[''path''].lower\\(\\): print\\(f\"\"{p[''id'']}: {p[''path'']} \\({p[''title'']}\\) [{p[''locale'']}]\"\"\\) \")",
+      "Bash(python3 -c \" import sys, json, re raw = sys.stdin.read\\(\\) data = json.loads\\(raw\\) content = data.get\\(''data'', {}\\).get\\(''pages'', {}\\).get\\(''single'', {}\\).get\\(''content'', ''''\\) if content: print\\(content\\) else: # Try to extract from raw print\\(raw[:3000]\\) \")",
+      "Bash(myquota:*)",
+      "Bash(chmod:*)"
+    ]
+  }
+}

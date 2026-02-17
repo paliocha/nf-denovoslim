@@ -194,6 +194,30 @@ rm -rf /work/users/martpali/nxf-*
 - Custom containers (TD2, Lace) are local `.sif` files, not pulled from registries
 - `$APPTAINER_TMPDIR` is automatically set by SLURM prolog on compute nodes
 
+## MMseqs2 Taxonomy Internals
+
+The `MMSEQS2_TAXONOMY` process runs `mmseqs taxonomy` against the UniProt/TrEMBL database (~252M sequences, ~132 GB on disk). Understanding its internal behavior is important for interpreting logs and tuning resources.
+
+### Internal target-split mechanism
+
+When the target database index exceeds `--split-memory-limit` (set to 255G), MMseqs2 automatically splits the **target DB** into chunks. For TrEMBL this means 5 splits of ~50M sequences each. Each split builds a ~96 GB prefilter k-mer index in memory, searches **all** query sequences against that split, then discards the index and moves to the next split. This is purely internal to MMseqs2 and is distinct from any pipeline-level query chunking.
+
+Log signature: `Target split mode. Searching through 5 splits.`
+
+### Two-phase taxonomy workflow
+
+`mmseqs taxonomy` runs two search phases internally:
+
+1. **ORF filter** (sensitivity `-s 2`): 6-frame translates all SuperTranscripts into ORFs, runs a fast prefilter+alignment against TrEMBL. Only ORFs with hits pass (e.g., 5.09M ORFs → 391K, ~7.7%). This is a coarse filter, not the final taxonomy assignment. LCA is not applied here.
+
+2. **Full taxonomy search** (sensitivity `-s 7`): Searches only the 391K filtered ORFs with `--lca-search 1` enabled and **LCA mode 3** (weighted). Each target split is searched independently, and LCA merges the results across all splits to assign the final taxonomy.
+
+The log line `LCA mode: 0` that appears in the prefilter phase parameters refers to Phase 1 only. LCA mode 3 is active in Phase 2 where actual taxonomy is assigned.
+
+### Memory implications
+
+Each of the 5 target splits builds a ~96 GB k-mer index. Combined with the query ORFs and alignment workspace, the process typically needs 250-400 GB resident memory. The config starts at 300 GB and retries at 400/500 GB.
+
 ## Known Gotchas
 
 1. **Lace caps at 50 transcripts per cluster** — "WARNING: will only take first 50 transcripts" is expected for highly fragmented clusters. Adjustable via `--maxTrans` but 50 is fine.
