@@ -21,15 +21,18 @@ process TD2_PREDICT {
     path("${supertranscripts_fasta}.TD2.cds"),              emit: cds
     path("${supertranscripts_fasta}.TD2.gff3"),             emit: gff3
     path("${supertranscripts_fasta}.TD2.bed"),              emit: bed
-    path("${supertranscripts_fasta}.TD2_dir/psauron_score.csv"), emit: psauron_scores
+    path("${supertranscripts_fasta.baseName}/psauron_score.csv"), emit: psauron_scores
 
     script:
     """
     # Concatenate homology hits from both searches
     cat ${swissprot_m8} ${pfam_m8} > combined_alnRes.m8
 
-    # Ensure TD2_dir is where TD2.Predict expects it (beside the input fasta)
-    ln -sf ${td2_dir} ${supertranscripts_fasta}.TD2_dir
+    # Ensure TD2 output dir (stem) is present beside the input fasta.
+    # Nextflow stages td2_dir with its original name; rename if needed.
+    if [ ! -d "${supertranscripts_fasta.baseName}" ] && [ -d "${td2_dir}" ]; then
+        mv ${td2_dir} ${supertranscripts_fasta.baseName}
+    fi
 
     TD2.Predict \\
         -t ${supertranscripts_fasta} \\

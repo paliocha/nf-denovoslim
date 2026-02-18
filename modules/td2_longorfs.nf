@@ -6,7 +6,7 @@ process TD2_LONGORFS {
     label 'process_low'
     tag "${species_label}"
 
-    // TD2 writes to ${input}.TD2_dir/ beside the input file
+    // TD2 writes to ./{stem}/ beside the input file (strips .fasta extension)
     stageInMode 'copy'
 
     input:
@@ -14,10 +14,10 @@ process TD2_LONGORFS {
     val(species_label)
 
     output:
-    path("${supertranscripts_fasta}.TD2_dir/longest_orfs.pep"), emit: longest_orfs_pep
-    path("${supertranscripts_fasta}.TD2_dir/longest_orfs.cds"), emit: longest_orfs_cds
-    path("${supertranscripts_fasta}.TD2_dir/longest_orfs.gff3"), emit: longest_orfs_gff3
-    path("${supertranscripts_fasta}.TD2_dir"),                   emit: td2_dir
+    path("${supertranscripts_fasta.baseName}/longest_orfs.pep"), emit: longest_orfs_pep
+    path("${supertranscripts_fasta.baseName}/longest_orfs.cds"), emit: longest_orfs_cds
+    path("${supertranscripts_fasta.baseName}/longest_orfs.gff3"), emit: longest_orfs_gff3
+    path("${supertranscripts_fasta.baseName}"),                   emit: td2_dir
 
     script:
     def args = task.ext.args ?: ''
