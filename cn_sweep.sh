@@ -6,7 +6,10 @@
 #SBATCH --job-name=cn-sweep
 #SBATCH --output=cn_sweep_%j.out
 
-# Clean stale files from $TMPDIR on all compute nodes (parallel via xargs).
+# Clean stale files from node-local scratch on all compute nodes (parallel via xargs).
+# NOTE: With per-job $TMPDIR on compute nodes, SLURM auto-cleans job scratch.
+# This script cleans leftovers in /work/users/$USER that predate the per-job change
+# or were created outside $TMPDIR (e.g., Apptainer cache, R temp files).
 # Removes: Rtmp*, tmp.*, nxf-*, nxf.*, ompi.*, singularity cache,
 #           hsperfdata, libjansi, rstudio leftovers, resolv.conf,
 #           build-temp-*, bundle-temp-* (Apptainer build cache)
@@ -17,7 +20,7 @@ mapfile -t NODES < <(sinfo -p orion -h -o "%n" | sort)
 sweep_node() {
     local node=$1
     srun -n1 --partition=orion --nodelist="$node" --time=00:02:00 --cpus-per-task=1 --mem=512M bash -c '
-        DIR="$(dirname "$TMPDIR")/$USER"
+        DIR="/work/users/$USER"
 
         if [ ! -d "$DIR" ]; then
             printf "%-8s  (no directory)\n" "$(hostname -s)"
