@@ -20,6 +20,8 @@ process LACE {
 
     script:
     """
+    LOCAL=\${TMPDIR:-/tmp}/lace_\$\$
+    mkdir -p \$LOCAL
     export MPLCONFIGDIR=\$(mktemp -d -p /tmp)
     export PYTHONUNBUFFERED=1
 
@@ -28,8 +30,9 @@ process LACE {
         ${corset_clusters} \\
         -t \\
         --cores ${task.cpus} \\
-        -o lace_out
+        -o \$LOCAL/lace_out
 
-    cp lace_out/SuperDuper.fasta supertranscripts.fasta
+    cp \$LOCAL/lace_out/SuperDuper.fasta supertranscripts.fasta
+    rm -rf \$LOCAL
     """
 }
