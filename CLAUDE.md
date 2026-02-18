@@ -162,48 +162,50 @@ Enforced by `VALIDATE_IDS` process. Any process that renames or filters sequence
 
 ## Orion HPC Filesystems
 
-All shared storage is IBM Storage Scale (GPFS) exported via NFS4. Each compute node also has a local XFS disk.
+All shared storage is IBM Storage Scale (GPFS) exported via NFS4. Each compute node also has a local XFS disk mounted at `/work` (3.5–11 TB depending on node).
 
-| Volume | Env Var | Path | Backed Up | Purge Policy | Quota (martpali / fjellheimlab) |
-|--------|---------|------|-----------|-------------|-------------------------------|
-| **Home** | `$HOME` | `/net/fs-2/scale/OrionStore/Home/martpali` | Daily + weekly | None while active | 200G soft / 300G hard per user |
-| **Projects** | `$PROJECTS` | `/mnt/project` → OrionStore/Projects (610T) | Daily + weekly | None during project | 40T group quota |
-| **Scratch** | `$SCRATCH` | `/mnt/SCRATCH/martpali` → OrionStore/Scratch (50T) | Daily + weekly | **6 months inactive → purged Thursdays** | 500G soft / 1T hard per user |
-| **ScratchProjects** | `$SCRATCH_PROJECTS` | `/mnt/ScratchProjects` (200T) | Yes | 6 months | Group quota |
-| **Labfiles** | `$LABFILES` | OrionStore/Labfiles | Daily + weekly | None during project | 18T group quota |
-| **Work (login)** | `$TMPDIR` | `/work/users/martpali` — local XFS, 187G | **No** | "Every 2 weeks" | None |
-| **Work (compute)** | `$TMPDIR` | `/work/users/{user}_{jobid}` — local XFS, **3.5T per node** | **No** | Deleted by SLURM epilog | None |
+| Volume | Env Var | Path | Backed Up | Purge Policy | Quota |
+|--------|---------|------|-----------|-------------|-------|
+| **Home** | `$HOME` | `/net/fs-2/scale/OrionStore/Home/$USER` | Yes | None while active | 200G soft / 300G hard per user |
+| **Projects** | `$PROJECTS` | `/mnt/project` → OrionStore/Projects | Yes | None during project | Group quota |
+| **Scratch** | `$SCRATCH` | `/mnt/SCRATCH/$USER` | Yes | **6 months inactive → purged** | 500G soft / 1T hard per user |
+| **ScratchProjects** | `$SCRATCH_PROJECTS` | `/mnt/ScratchProjects` | Yes | 6 months | Group quota |
+| **Labfiles** | `$LABFILES` | OrionStore/Labfiles | Yes | None during project | Group quota |
+| **Local work** | `$TMPDIR` | `/work/users/$USER` — node-local XFS | **No** | Not automatically cleaned | None |
 
-Backups accessible via `.snapshot` directory under each volume. Check quotas with `myquota -u martpali` or `myquota -g fjellheimlab`.
+### $TMPDIR — node-local SSD
 
-### $TMPDIR on Compute Nodes
+`$TMPDIR` resolves to `/work/users/$USER` on **both** login and compute nodes. The path is identical but each node has its own physical disk — files on the login node's `/work` are NOT visible from compute nodes and vice versa.
 
-SLURM prolog creates a per-job directory on the node's local 3.5T SSD at `/work/users/${USER}_${SLURM_JOB_ID}` and exports both `$TMPDIR` and `$APPTAINER_TMPDIR`. The epilog runs `rm -rf $TMPDIR` on job completion.
+**Key facts:**
+- **Not per-job** — SLURM does NOT create or clean up per-job subdirectories. `$TMPDIR` is a persistent user directory.
+- **No automatic cleanup** — stale files accumulate unless you clean them yourself. The documented "purge every 2 weeks" on login nodes is not consistently enforced.
+- **3.5–11 TB per node** — capacity varies; some nodes have been observed at 97% usage due to other users' stale files.
+- **When to use:** Many parallel jobs reading/writing the same data, lots of random I/O, lots of temporary files.
+- **When NOT to use:** Jobs needing files visible across multiple nodes, or data exceeding available space.
 
-**When to use:** Many parallel jobs reading/writing same files, lots of random I/O, lots of temp files. Copy data in, work locally, copy results out.
+**How scratch works in this pipeline** (`process.scratch = '$TMPDIR'`): Nextflow creates a unique temp directory under `$TMPDIR` (e.g., `/work/users/martpali/nxf-XXXXXX`) for each task. It stages inputs there, runs the task, then `rsync`s declared outputs back to the NFS work directory. On success, Nextflow removes the temp dir. On failure, the temp dir persists for debugging.
 
-**When NOT to use:** Jobs needing files visible across multiple nodes, or when the data exceeds available local space.
+The `beforeScript` sets setgid+umask on the scratch dir so task-created files inherit the project group, and also sets setgid on the NFS work dir via `$NXF_TASK_WORKDIR` so files rsync'd back inherit the correct group. Processes that copy large DB files (MMSEQS2_TAXONOMY, DIAMOND_BLASTX) do so to CWD explicitly since DBs are passed as `val` path strings, not `path` inputs.
 
-**Why scratch is enabled** (`process.scratch = '$TMPDIR'`): With scratch, every task runs on the node's 3.5 TB local SSD — no NFS latency for intermediate files. Nextflow stages inputs there, runs the task, then `rsync`s declared outputs back to the NFS work directory. The `beforeScript` sets setgid on both the scratch dir (so task-created files inherit the project group) and the NFS work dir via `$NXF_TASK_WORKDIR` (so files rsync'd back also inherit the project group via Linux setgid directory semantics). Processes that need large DB files (MMSEQS2_TAXONOMY, DIAMOND_BLASTX) still copy them to CWD explicitly since they're passed as `val` path strings, not `path` inputs.
-
-**Node-local disk can fill up.** Some nodes have been observed at 97% usage due to stale files from other users. The documented "purge every 2 weeks" policy is not consistently enforced. Clean up your own stale files with:
+**Cleanup of stale Nextflow scratch dirs:**
 ```bash
 # On a compute node (via srun)
-rm -rf /work/users/martpali/Rtmp* /work/users/martpali/tmp.* /work/users/martpali/nxf-*
+srun --partition=orion --time=5:00 --ntasks=1 bash -c 'rm -rf /work/users/$USER/nxf-*'
 # On login node
-rm -rf /work/users/martpali/nxf-*
+rm -rf /work/users/$USER/nxf-*
 ```
 
 ### SLURM Configuration
 
 - All Orion-specific settings are in `conf/orion.config` (loaded by `-profile orion`).
 - Partition: `orion` — 6 compute nodes (cn-31 to cn-35, cn-37), 384 CPUs, ~1.5 TB RAM each, shared
-- `scratch = '$TMPDIR'` — all tasks run on node-local 3.5 TB SSD; outputs rsync'd back to NFS work dir
+- `scratch = '$TMPDIR'` — all tasks run on node-local SSD (`/work/users/$USER`); Nextflow creates per-task `nxf-XXXXXX` dirs and rsync's outputs back to NFS work dir
 - `beforeScript` sets setgid+umask on scratch dir AND sets setgid on NFS work dir (via `$NXF_TASK_WORKDIR`) for correct group ownership; `afterScript` runs `chgrp -R <group> .` as safety net — both conditional on `params.unix_group`
 - Submit rate limit: 30/min, queue size: 20
 - Problem nodes can be excluded via `--orion_exclude_nodes cn-37`
 - Custom containers (TD2, Lace) are local `.sif` files, not pulled from registries
-- `$APPTAINER_TMPDIR` is automatically set by SLURM prolog on compute nodes
+- Container bind mounts include `-B /work:/work` so scratch dirs are accessible inside Apptainer
 
 ## MMseqs2 Taxonomy Internals
 
