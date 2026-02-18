@@ -16,3 +16,7 @@ singularity_cache/
 
 # Samplesheets (contain local paths)
 *.samplesheet.csv
+
+# Internal analysis notes (not part of pipeline)
+THREADING_ANALYSIS.md
+IMPROVE_PLAN.md
