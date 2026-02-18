@@ -131,7 +131,7 @@ nextflow run main.nf \
     --mmseqs2_swissprot /path/to/SwissProtDB \
     --mmseqs2_pfam /path/to/PfamDB \
     --mmseqs2_eggnog /path/to/eggNOG7DB \
-    --mmseqs2_taxonomy_db /path/to/UniProtTrEMBLtaxdb \
+    --mmseqs2_taxonomy_db /path/to/UniRef90taxdb \
     --diamond_db /path/to/uniref90.dmnd \
     --outdir /path/to/results
 ```
@@ -192,8 +192,10 @@ mmseqs databases Pfam-A.full PfamDB tmp
 # eggNOG7 profiles
 mmseqs databases eggNOG eggNOG7DB tmp
 
-# UniProt/TrEMBL (for taxonomy classification -- broader coverage than SwissProt)
-mmseqs databases UniProtKB/TrEMBL UniProtTrEMBLtaxdb tmp
+# UniRef90 taxonomy database (for taxonomy classification)
+# ~90M sequences, ~3.5x smaller than full TrEMBL, fits in RAM without splitting.
+# Download and build using the provided script:
+sbatch scripts/setup_uniref90_taxdb.sh
 
 # UniRef90 Diamond database (for frameshift correction)
 # Download and build using the provided script:

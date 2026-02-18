@@ -35,7 +35,7 @@ nextflow run $PIPELINE_DIR/main.nf \
     --mmseqs2_swissprot $PROJECTS/glowberry/transannot/db/SwissProtDB \
     --mmseqs2_pfam $PROJECTS/glowberry/transannot/db/PfamDB \
     --mmseqs2_eggnog $PROJECTS/glowberry/transannot/db/eggNOG7_profiles \
-    --mmseqs2_taxonomy_db $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/UniProtTrEMBLtaxdb \
+    --mmseqs2_taxonomy_db $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/UniRef90taxdb \
     --diamond_db $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/uniref90.dmnd \
     --filter_taxon 35493 \
     --outdir $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/BMAX

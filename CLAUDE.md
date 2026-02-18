@@ -196,33 +196,38 @@ rm -rf /work/users/martpali/nxf-*
 
 ## MMseqs2 Taxonomy Internals
 
-The `MMSEQS2_TAXONOMY` process runs `mmseqs taxonomy` against the UniProt/TrEMBL database (~252M sequences, ~132 GB on disk). Understanding its internal behavior is important for interpreting logs and tuning resources.
+The `MMSEQS2_TAXONOMY` process runs `mmseqs taxonomy` against the UniRef90 database (~90M representative sequences, ~25 GB on disk). UniRef90 replaced the full TrEMBL database (~252M sequences) to eliminate target-splitting and dramatically reduce runtime.
 
-### Internal target-split mechanism
+### Why UniRef90 instead of full TrEMBL
 
-When the target database index exceeds `--split-memory-limit` (set to 255G), MMseqs2 automatically splits the **target DB** into chunks. For TrEMBL this means 5 splits of ~50M sequences each. Each split builds a ~96 GB prefilter k-mer index in memory, searches **all** query sequences against that split, then discards the index and moves to the next split. This is purely internal to MMseqs2 and is distinct from any pipeline-level query chunking.
+The taxonomy step is used only as a coarse kingdom-level filter (Viridiplantae, taxon 35493). At 90% identity clustering, taxonomic lineages are virtually identical within each cluster, so there is no loss of filter accuracy. UniRef90 gives a ~3.5× smaller k-mer index that fits in RAM without any target splitting.
 
-Log signature: `Target split mode. Searching through 5 splits.`
+### Memory formula (from MMseqs2 wiki)
+
+```
+M = (7 * N * L + 8 * a^k) bytes
+```
+
+For UniRef90 (~90M seqs, avg length ~330): M ≈ 208 GB + 10 GB = ~218 GB.
+With `--split-memory-limit` at 85% of task memory, 400 GB allocation → 340 GB limit → no splits.
 
 ### Two-phase taxonomy workflow
 
 `mmseqs taxonomy` runs two search phases internally:
 
-1. **ORF filter** (sensitivity `-s 2`): 6-frame translates all SuperTranscripts into ORFs, runs a fast prefilter+alignment against TrEMBL. Only ORFs with hits pass (e.g., 5.09M ORFs → 391K, ~7.7%). This is a coarse filter, not the final taxonomy assignment. LCA is not applied here.
+1. **ORF filter** (sensitivity `-s 2`): 6-frame translates all SuperTranscripts into ORFs, runs a fast prefilter+alignment against the DB. Only ORFs with hits pass (~7-8%). This is a coarse filter, not the final taxonomy assignment.
 
-2. **Full taxonomy search** (sensitivity `-s 7`): Searches only the 391K filtered ORFs with `--lca-search 1` enabled and **LCA mode 3** (weighted). Each target split is searched independently, and LCA merges the results across all splits to assign the final taxonomy.
+2. **Full taxonomy search** (sensitivity `-s 7`): Searches only the filtered ORFs with `--lca-search 1` enabled and **LCA mode 3** (weighted). LCA merges results to assign the final taxonomy.
 
-The log line `LCA mode: 0` that appears in the prefilter phase parameters refers to Phase 1 only. LCA mode 3 is active in Phase 2 where actual taxonomy is assigned.
+### Previous setup (TrEMBL, for reference)
 
-### Memory implications
-
-Each of the 5 target splits builds a ~96 GB k-mer index. Combined with the query ORFs and alignment workspace, the process typically needs 250-400 GB resident memory. The config starts at 300 GB and retries at 400/500 GB.
+The original TrEMBL DB had 252M sequences. Its k-mer index was ~554 GB, requiring 5 target splits at 255G `--split-memory-limit`. This introduced a massive result-merging I/O overhead and 16+ hour runtimes. The switch to UniRef90 was made in Feb 2026.
 
 ## Known Gotchas
 
 1. **Lace caps at 50 transcripts per cluster** — "WARNING: will only take first 50 transcripts" is expected for highly fragmented clusters. Adjustable via `--maxTrans` but 50 is fine.
 2. **Taxonomy filter removes no-hit sequences too** — `mmseqs filtertaxdb` drops sequences with no taxonomy hit, not just non-plant. This is intentional (removes contamination).
 3. **Corset cluster count scales with samples** — 1 sample → ~50K clusters; 40 samples across 10 conditions → ~244K clusters. This is correct condition-aware behavior.
-4. **MMseqs2 taxonomy memory** — TrEMBL DB is ~132 GB on disk; each chunk needs ~55-63 GB resident just for the DB.
+4. **MMseqs2 taxonomy memory** — UniRef90 DB k-mer index is ~218 GB; needs ~400 GB allocation to avoid target splitting. Config retry ladder: 400/600/800 GB.
 5. **Sample naming convention** — `{SPECIES}{IndivID}_{Timepoint}_{Tissue}` (e.g., `BMAX56_T4_L`). The `extractCondition()` helper in `main.nf` takes the last two `_`-delimited parts. Changing sample naming breaks Corset condition grouping.
 6. **Frameshift correction uses separate containers** — Diamond blastx runs in the Diamond container, then the Python correction script runs in the BioPython container. These were split because the Diamond container lacks Python3. The `diamond_python` container in `containers/` is a legacy build.
