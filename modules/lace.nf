@@ -4,6 +4,10 @@
  * Lace constructs a single linear representation (SuperTranscript) per gene
  * by aligning transcripts within each cluster using BLAT and merging them
  * into a non-redundant consensus sequence.
+ *
+ * Lace creates one FASTA file per cluster in its output dir — thousands of
+ * tiny files that are very slow on NFS. With scratch enabled (Orion), the
+ * task CWD is already on node-local SSD, so this I/O stays local.
  */
 
 process LACE {
@@ -20,9 +24,7 @@ process LACE {
 
     script:
     """
-    LOCAL=\${TMPDIR:-/tmp}/lace_\$\$
-    mkdir -p \$LOCAL
-    export MPLCONFIGDIR=\$(mktemp -d -p /tmp)
+    export MPLCONFIGDIR=\$(mktemp -d)
     export PYTHONUNBUFFERED=1
 
     Lace \\
@@ -30,9 +32,8 @@ process LACE {
         ${corset_clusters} \\
         -t \\
         --cores ${task.cpus} \\
-        -o \$LOCAL/lace_out
+        -o lace_out
 
-    cp \$LOCAL/lace_out/SuperDuper.fasta supertranscripts.fasta
-    rm -rf \$LOCAL
+    cp lace_out/SuperDuper.fasta supertranscripts.fasta
     """
 }

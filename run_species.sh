@@ -15,6 +15,15 @@
 #SBATCH --job-name=denovoslim
 #SBATCH --output=%x_%A.out
 
+# ── Environment (before strict mode — /etc/bashrc uses unbound vars) ──
+source ~/.bashrc
+eval "$(micromamba shell hook --shell bash)"
+micromamba activate Nextflow
+
+module load Java
+module load Anaconda3
+module load singularity
+
 set -euo pipefail
 
 # ── Species from CLI argument ─────────────────────────────────────────
@@ -31,15 +40,6 @@ OUTDIR="$PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/${SPECIES}
 # ── Databases ─────────────────────────────────────────────────────────
 DB_BASE="$PROJECTS/glowberry/transannot/db"
 LOCAL_DB="$PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db"
-
-# ── Environment ───────────────────────────────────────────────────────
-source ~/.bashrc
-eval "$(micromamba shell hook --shell bash)"
-micromamba activate Nextflow
-
-module load Java
-module load Anaconda3
-module load singularity
 
 # ── Launch ────────────────────────────────────────────────────────────
 mkdir -p "$LAUNCH_DIR"
