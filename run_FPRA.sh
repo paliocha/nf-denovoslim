@@ -1,4 +1,5 @@
 #!/bin/bash
+# DEPRECATED: Use run_species.sh instead:  sbatch run_species.sh FPRA
 #SBATCH --partition=orion
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2

@@ -15,7 +15,6 @@ The Diamond TSV must have columns (outfmt 6):
 
 import re
 import sys
-from collections import defaultdict
 
 # --------------------------------------------------------------------------- #
 #  BTOP tokenizer
@@ -186,6 +185,7 @@ def main():
 
     # Parse frameshifts from Diamond output
     frameshifts = parse_frameshifts(diamond_tsv)
+    n_with_hits = len(frameshifts)  # sequences that had frameshift-containing hits
 
     # Read input sequences
     sequences = read_fasta(input_fasta)
@@ -215,7 +215,7 @@ def main():
     # Print stats to stdout
     print(f"Frameshift correction summary:")
     print(f"  Total sequences:          {len(sequences)}")
-    print(f"  Sequences with hits:      {len(frameshifts) + (len(sequences) - len(sequences))}")
+    print(f"  Sequences with frameshifts: {n_with_hits}")
     print(f"  Sequences corrected:      {n_corrected}")
     print(f"  Total frameshifts fixed:  {n_total_fs}")
     print(f"    Deletions (extra base): {n_deletions}")

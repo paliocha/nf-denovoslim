@@ -13,10 +13,15 @@ include { MERGE_TAXONOMY_RESULTS   } from '../modules/mmseqs2_taxonomy_chunked'
 workflow MMSEQS2_TAXONOMY_CHUNKED {
     take:
     supertranscripts_fasta    // path: input FASTA file
+    taxonomy_db               // val: path to MMseqs2 taxonomy DB
+    search_sens               // val: search sensitivity
+    filter_taxon              // val: NCBI taxon ID to keep
+    chunk_size                // val: sequences per chunk
+    species_label             // val: species label for tags
 
     main:
     // Step 1: Split SuperTranscripts into chunks
-    SPLIT_SUPERTRANSCRIPTS(supertranscripts_fasta)
+    SPLIT_SUPERTRANSCRIPTS(supertranscripts_fasta, chunk_size, species_label)
 
     // Step 2: Create channel of chunks with indices
     ch_chunks = SPLIT_SUPERTRANSCRIPTS.out.chunks
@@ -27,14 +32,16 @@ workflow MMSEQS2_TAXONOMY_CHUNKED {
         }
 
     // Step 3: Run taxonomy classification + filtering on each chunk in parallel
-    MMSEQS2_TAXONOMY_CHUNK(ch_chunks)
+    MMSEQS2_TAXONOMY_CHUNK(ch_chunks, taxonomy_db, search_sens, filter_taxon, species_label)
 
     // Step 4: Merge all chunk results
     MERGE_TAXONOMY_RESULTS(
         MMSEQS2_TAXONOMY_CHUNK.out.fasta.map { idx, fasta -> fasta }.collect(),
         MMSEQS2_TAXONOMY_CHUNK.out.tsv.map { idx, tsv -> tsv }.collect(),
         MMSEQS2_TAXONOMY_CHUNK.out.stats.collect(),
-        supertranscripts_fasta
+        supertranscripts_fasta,
+        filter_taxon,
+        species_label
     )
 
     emit:

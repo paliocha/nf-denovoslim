@@ -40,16 +40,26 @@ include { THINNING_REPORT                            } from './modules/thinning_
 //  Input validation
 // ──────────────────────────────────────────────────────────────────────────────
 
-if (!params.trinity_fasta) { error "Please provide --trinity_fasta" }
-if (!params.samplesheet)   { error "Please provide --samplesheet" }
+if (!params.trinity_fasta)       { error "Please provide --trinity_fasta" }
+if (!params.samplesheet)         { error "Please provide --samplesheet" }
+if (!params.mmseqs2_swissprot)   { error "Please provide --mmseqs2_swissprot (path to MMseqs2 SwissProt DB)" }
+if (!params.mmseqs2_pfam)        { error "Please provide --mmseqs2_pfam (path to MMseqs2 Pfam DB)" }
+if (!params.mmseqs2_eggnog)      { error "Please provide --mmseqs2_eggnog (path to MMseqs2 eggNOG DB)" }
+if (!params.mmseqs2_taxonomy_db) { error "Please provide --mmseqs2_taxonomy_db (path to MMseqs2 taxonomy DB)" }
+if (!params.eggnog_annotations)  { error "Please provide --eggnog_annotations (path to eggNOG annotation TSV)" }
+if (!params.busco_lineage)       { error "Please provide --busco_lineage (e.g. 'poales_odb12', 'eudicots_odb12')" }
 
 // ──────────────────────────────────────────────────────────────────────────────
-//  Helper: extract condition from sample name
+//  Helper: extract condition from sample name (fallback if no 'condition' column)
 //  e.g. BMAX56_T4_L -> T4_L
 // ──────────────────────────────────────────────────────────────────────────────
 
 def extractCondition(sample_name) {
     def parts = sample_name.split('_')
+    if (parts.size() < 3) {
+        log.warn "Cannot extract condition from sample '${sample_name}' — using full name as condition"
+        return sample_name
+    }
     // Last two parts are Timepoint and Tissue
     return "${parts[-2]}_${parts[-1]}"
 }
@@ -61,13 +71,15 @@ def extractCondition(sample_name) {
 workflow {
 
     // --- Parse samplesheet (nf-core/rnaseq format) ---
-    // CSV: sample,fastq_1,fastq_2,strandedness
+    // CSV: sample,fastq_1,fastq_2,strandedness[,condition]
+    // If 'condition' column is present, it is used for Corset grouping;
+    // otherwise the condition is extracted from sample name (last two _-separated parts).
     ch_samplesheet = Channel
         .fromPath(params.samplesheet, checkIfExists: true)
         .splitCsv(header: true)
         .map { row ->
             def sample_id = row.sample
-            def condition = extractCondition(sample_id)
+            def condition = row.condition ?: extractCondition(sample_id)
             def reads_1   = file(row.fastq_1, checkIfExists: true)
             def reads_2   = file(row.fastq_2, checkIfExists: true)
             [ sample_id, condition, reads_1, reads_2 ]
@@ -106,10 +118,19 @@ workflow {
     )
 
     // Recombine filtered reads with condition metadata
-    // Derive condition directly from sample_id to avoid channel fork/join issues with -resume
+    // Derive condition from samplesheet (with condition column support)
+    // Re-read samplesheet to build a lookup map for condition per sample
+    ch_condition_map = Channel
+        .fromPath(params.samplesheet, checkIfExists: true)
+        .splitCsv(header: true)
+        .map { row -> [ row.sample, row.condition ?: extractCondition(row.sample) ] }
+        .toList()
+        .map { list -> list.collectEntries { [ it[0], it[1] ] } }
+
     ch_filtered_reads = SORTMERNA.out.reads
-        .map { sample_id, r1, r2 ->
-            [ sample_id, extractCondition(sample_id), r1, r2 ]
+        .combine(ch_condition_map)
+        .map { sample_id, r1, r2, cmap ->
+            [ sample_id, cmap[sample_id] ?: extractCondition(sample_id), r1, r2 ]
         }
 
     // ╔══════════════════════════════════════════════════════════════════════╗
@@ -147,7 +168,7 @@ workflow {
         .fromPath(params.samplesheet, checkIfExists: true)
         .splitCsv(header: true)
         .map { row ->
-            [ sample_id: row.sample, condition: extractCondition(row.sample) ]
+            [ sample_id: row.sample, condition: row.condition ?: extractCondition(row.sample) ]
         }
         .toSortedList { a, b ->
             a.condition <=> b.condition ?: a.sample_id <=> b.sample_id

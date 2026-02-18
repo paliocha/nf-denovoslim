@@ -6,21 +6,23 @@
  */
 
 process SPLIT_SUPERTRANSCRIPTS {
-    tag "${params.species_label}"
+    tag "${species_label}"
 
     input:
     path(supertranscripts_fasta)
+    val(chunk_size)
+    val(species_label)
 
     output:
     path("chunks/st_chunk_*.fasta"), emit: chunks
 
     script:
-    def chunk_size = params.taxonomy_chunk_size ?: 2000
+    def cs = chunk_size ?: 2000
     """
     mkdir -p chunks
 
-    # Split into chunks of ${chunk_size} sequences each
-    awk -v size=${chunk_size} -v pre=chunks/st_chunk_ '
+    # Split into chunks of ${cs} sequences each
+    awk -v size=${cs} -v pre=chunks/st_chunk_ '
         /^>/ {
             if (n % size == 0) {
                 file = sprintf("%s%03d.fasta", pre, int(n / size))
@@ -40,10 +42,14 @@ process SPLIT_SUPERTRANSCRIPTS {
 }
 
 process MMSEQS2_TAXONOMY_CHUNK {
-    tag "${params.species_label}_chunk_${chunk_idx}"
+    tag "${species_label}_chunk_${chunk_idx}"
 
     input:
     tuple val(chunk_idx), path(chunk_fasta)
+    val(taxonomy_db)
+    val(search_sens)
+    val(filter_taxon)
+    val(species_label)
 
     output:
     tuple val(chunk_idx), path("filtered_${chunk_idx}.fasta"), emit: fasta
@@ -57,9 +63,9 @@ process MMSEQS2_TAXONOMY_CHUNK {
 
     # 2. Taxonomy assignment via LCA against UniProt/TrEMBL
     MEM_GB=\$(( ${task.memory.toGiga()} * 85 / 100 ))
-    mmseqs taxonomy queryDB ${params.mmseqs2_taxonomy_db} taxResult tmp_tax \\
+    mmseqs taxonomy queryDB ${taxonomy_db} taxResult tmp_tax \\
         --tax-lineage 1 \\
-        -s ${params.mmseqs2_search_sens} \\
+        -s ${search_sens} \\
         --split-memory-limit \${MEM_GB}G \\
         --threads ${task.cpus}
 
@@ -67,8 +73,8 @@ process MMSEQS2_TAXONOMY_CHUNK {
     mmseqs createtsv queryDB taxResult tax_${chunk_idx}.tsv
 
     # 4. Filter taxonomy results: keep only target taxon and descendants
-    mmseqs filtertaxdb ${params.mmseqs2_taxonomy_db} taxResult filteredTaxResult \\
-        --taxon-list ${params.filter_taxon}
+    mmseqs filtertaxdb ${taxonomy_db} taxResult filteredTaxResult \\
+        --taxon-list ${filter_taxon}
 
     # 5. Extract matching query sequences
     mmseqs createsubdb filteredTaxResult queryDB filteredDB
@@ -94,14 +100,15 @@ EOF
 }
 
 process MERGE_TAXONOMY_RESULTS {
-    tag "${params.species_label}"
-    publishDir "${params.outdir}/taxonomy", mode: 'copy'
+    tag "${species_label}"
 
     input:
     path("filtered_*.fasta")
     path("tax_*.tsv")
     path("stats_*.txt")
     path(original_fasta)
+    val(filter_taxon)
+    val(species_label)
 
     output:
     path("supertranscripts_filtered.fasta"), emit: fasta
@@ -122,7 +129,7 @@ process MERGE_TAXONOMY_RESULTS {
     REMOVED=\$((TOTAL - KEPT))
 
     cat > taxonomy_filter_stats.txt <<EOF
-Taxonomy filter: NCBI taxon ID ${params.filter_taxon} (chunked processing)
+Taxonomy filter: NCBI taxon ID ${filter_taxon} (chunked processing)
 Total SuperTranscripts:    \$TOTAL
 Matching (kept):           \$KEPT (\$(awk "BEGIN{printf \\"%.1f\\", \$KEPT/\$TOTAL*100}")%)
 Non-matching (removed):    \$REMOVED (\$(awk "BEGIN{printf \\"%.1f\\", \$REMOVED/\$TOTAL*100}")%)

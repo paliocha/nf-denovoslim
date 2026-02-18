@@ -30,7 +30,7 @@ THREADS=32
 
 # Load modules / containers
 module load singularity 2>/dev/null || true
-MMSEQS_IMG="quay.io/biocontainers/mmseqs2:18.8cc5c--hd6d6fdc_0"
+MMSEQS_IMG="docker://quay.io/biocontainers/mmseqs2:18.8cc5c--hd6d6fdc_0"
 
 # Use apptainer exec if available, otherwise assume mmseqs is in PATH
 if command -v apptainer &>/dev/null; then
@@ -44,14 +44,21 @@ fi
 cd "$DB_DIR"
 mkdir -p tmp_uniref90
 
-echo "=== Downloading UniRef90 via mmseqs databases ==="
-echo "This downloads the FASTA, taxonomy mapping, and NCBI taxonomy dump."
+
+echo "=== Building UniRef90 MMseqs2 taxonomy DB ==="
+echo "Using existing: ${DB_DIR}/uniref90.fasta.gz"
 echo "Started: $(date)"
 
-$MMSEQS databases UniRef90 "$DB_NAME" tmp_uniref90 --threads $THREADS
+# Step 1: Create MMseqs2 sequence DB from existing FASTA
+echo "[$(date)] createdb..."
+$MMSEQS createdb uniref90.fasta.gz $DB_NAME --threads $THREADS
+
+# Step 2: Add taxonomy (auto-downloads UniProt idmapping + NCBI taxdump)
+echo "[$(date)] createtaxdb..."
+$MMSEQS createtaxdb $DB_NAME tmp_uniref90 --threads $THREADS
 
 echo ""
-echo "=== Download & DB creation complete ==="
+echo "=== DB creation complete ==="
 echo "Finished: $(date)"
 echo ""
 echo "Database files:"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# filepath: /mnt/users/martpali/AnnualPerennial/nf-corset/bin/process_sample_sheet.py
+# Helper script for processing sample sheets (legacy, used for debugging).
 
 import sys
 import csv

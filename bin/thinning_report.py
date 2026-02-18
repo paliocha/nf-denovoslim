@@ -98,6 +98,14 @@ def fmt(number):
 
 
 def main():
+    if len(sys.argv) < 12:
+        print(f"Usage: {sys.argv[0]} <species_label> <trinity.fasta> <deduped.fasta> "
+              f"<supertranscripts.fasta> <grouper_clust> <orf_map> <faa> "
+              f"<initial_quant_dirs> <final_quant_dirs> <busco_summary> "
+              f"<id_validation> [sortmerna_logs]",
+              file=sys.stderr)
+        sys.exit(1)
+
     species       = sys.argv[1]
     trinity_fasta = sys.argv[2]
     deduped_fasta = sys.argv[3]

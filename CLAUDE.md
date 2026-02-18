@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Nextflow DSL2 pipeline (`nf-denovoslim`) that collapses ~1.2M fragmented Trinity de novo transcriptome transcripts into a non-redundant gene set: SuperTranscripts, one-best-protein FASTA, gene-level Salmon quantification, and functional annotation. Runs on the NMBU Orion HPC cluster via SLURM + Apptainer.
+Nextflow DSL2 pipeline (`nf-denovoslim`) that collapses ~1.2M fragmented Trinity de novo transcriptome transcripts into a non-redundant gene set: SuperTranscripts, one-best-protein FASTA, gene-level Salmon quantification, and functional annotation. Designed for HPC clusters with SLURM + Apptainer, with site-specific config isolated in `conf/orion.config`.
 
 Three grass species (BMAX, BMED, FPRA), each with 40 paired-end RNA-seq samples across 10 conditions (5 timepoints x 2 tissues).
 
@@ -18,25 +18,25 @@ micromamba activate Nextflow
 module load Java Anaconda3 singularity
 
 # Submit a species run (14-day SLURM head job)
-sbatch run_BMAX.sh
-sbatch run_BMED.sh
-sbatch run_FPRA.sh
+sbatch run_species.sh BMAX
+sbatch run_species.sh BMED
+sbatch run_species.sh FPRA
 
 # Dry-run to check syntax without executing
-nextflow run main.nf -profile apptainer,slurm -preview
+nextflow run main.nf -profile apptainer,orion -preview
 
 # Check pipeline status / resume a failed run
 cd ~/AnnualPerennial/nf-denovoslim/runs/BMAX
 nextflow log                           # list previous runs
 nextflow run $HOME/AnnualPerennial/nf-denovoslim/main.nf \
-    -profile apptainer,slurm -resume   # resume from last checkpoint
+    -profile apptainer,orion -resume   # resume from last checkpoint
 
 # Monitor running SLURM jobs
 squeue -u $USER
 sacct -j <JOBID> --format=JobID,Elapsed,MaxRSS,State
 
 # Validate Nextflow config (prints resolved params)
-nextflow config main.nf -profile apptainer,slurm
+nextflow config main.nf -profile apptainer,orion
 ```
 
 Work directories are on project storage (not home — quota issues):
@@ -71,18 +71,20 @@ Reads ──► SORTMERNA (rRNA removal)
 
 ### Code Organization
 
-- `main.nf` — Workflow logic, all channel wiring, process invocations
+- `main.nf` — Workflow logic, all channel wiring, process invocations, input validation
 - `modules/*.nf` — Individual process definitions (one tool per file)
 - `subworkflows/*.nf` — Split→process→merge orchestration for chunked steps
 - `conf/base.config` — Per-process CPU/memory/time allocations and retry logic
-- `nextflow.config` — Params, container assignments, profiles (apptainer, slurm, docker)
+- `conf/orion.config` — NMBU Orion HPC site-specific settings (DB paths, SLURM queue, filesystem mounts, group quota fix)
+- `nextflow.config` — Params (all DB defaults `null`), container assignments, profiles (apptainer, slurm, orion, docker, highmem, standard, test)
 - `bin/` — Python scripts (auto-added to PATH inside containers):
   - `select_best_orf.py` — picks one protein per gene using PSAURON coding-potential scores
   - `correct_frameshifts.py` — applies Diamond blastx-guided indel corrections to SuperTranscripts
   - `thinning_report.py` — generates the final pipeline summary statistics
   - `process_sample_sheet.py` — samplesheet parsing helper
 - `containers/` — Custom Dockerfiles and pre-built `.sif` files for TD2, Lace, and Diamond+Python
-- `run_{BMAX,BMED,FPRA}.sh` — Per-species SLURM sbatch scripts; each launches from `runs/{SPECIES}/` with work dir on `$PROJECTS`
+- `run_species.sh` — Consolidated SLURM sbatch script; takes species code as CLI arg (e.g., `sbatch run_species.sh BMAX`)
+- `run_{BMAX,BMED,FPRA}.sh` — **Deprecated** per-species SLURM scripts (use `run_species.sh` instead)
 
 ### DSL2 Module Pattern
 
@@ -123,9 +125,11 @@ A queue channel consumed by two `.map` operators splits items between them (not 
 - Re-deriving condition metadata via `extractCondition()` helper after SortMeRNA, instead of joining back
 
 ### Container + DB paths
-Large databases (SwissProt, Pfam, TrEMBL) are passed as `val` inputs (path strings), not `path` inputs. This prevents Nextflow from staging multi-GB database files into work directories. The container bind mounts (`-B /mnt/project -B /net/fs-2/scale`) make them accessible.
+Large databases (SwissProt, Pfam, UniRef90) are passed as `val` inputs (path strings), not `path` inputs. This prevents Nextflow from staging multi-GB database files into work directories. The Orion container bind mounts (`-B /mnt/project -B /net/fs-2/scale`) in `conf/orion.config` make them accessible.
 
-Note: `eggnog_annotations` is a separate TSV file (`e7_as_e5_annotations.tsv`) passed to TRANSANNOT, distinct from the MMseqs2 eggNOG profile DB (`mmseqs2_eggnog`). Both paths are configured in `nextflow.config`.
+All DB path params default to `null` in `nextflow.config` and are set either by the `orion` profile (`conf/orion.config`) or via CLI flags. The pipeline validates that all required DB params are non-null at startup.
+
+Note: `eggnog_annotations` is a separate TSV file (`e7_as_e5_annotations.tsv`) passed to TRANSANNOT, distinct from the MMseqs2 eggNOG profile DB (`mmseqs2_eggnog`). Both paths must be provided.
 
 ## Resource Configuration
 
@@ -135,6 +139,10 @@ memory = { check_max( 64.GB * task.attempt, 'memory' ) }
 ```
 
 Error strategy: retry on OOM/SLURM kill exit codes (104, 134, 137, 139, 140, 143, 247), finish on others. `maxRetries = 2`.
+
+Resource caps are set by profiles: `standard` (16 CPUs, 128 GB — default), `highmem` (32 CPUs, 1200 GB), or `test` (4 CPUs, 16 GB). The `orion` profile includes its own caps (32 CPUs, 1200 GB, 14 days).
+
+Global bash strict mode is enabled: `process.shell = ['/bin/bash', '-euo', 'pipefail']`.
 
 Heaviest processes:
 - `MMSEQS2_TAXONOMY_CHUNK`: 32 CPUs, 150-250 GB, 18h
@@ -176,7 +184,7 @@ SLURM prolog creates a per-job directory on the node's local 3.5T SSD at `/work/
 
 **When NOT to use:** Jobs needing files visible across multiple nodes, or when the data exceeds available local space.
 
-**Why scratch is disabled in the pipeline** (`process.scratch = false`): When Nextflow uses node-local scratch, it `mv`s results back to the work dir. `mv` preserves file ownership (`martpali:martpali`), which counts against personal quota instead of `fjellheimlab` group quota, causing quota failures. The `afterScript` that runs `chgrp -R fjellheimlab .` fixes this for the NFS work directory but can't retroactively fix moved files.
+**Why scratch is enabled** (`process.scratch = '$TMPDIR'`): With scratch, every task runs on the node's 3.5 TB local SSD — no NFS latency for intermediate files. Nextflow stages inputs there, runs the task, then `rsync`s declared outputs back to the NFS work directory. The `beforeScript` sets setgid on both the scratch dir (so task-created files inherit the project group) and the NFS work dir via `$NXF_TASK_WORKDIR` (so files rsync'd back also inherit the project group via Linux setgid directory semantics). Processes that need large DB files (MMSEQS2_TAXONOMY, DIAMOND_BLASTX) still copy them to CWD explicitly since they're passed as `val` path strings, not `path` inputs.
 
 **Node-local disk can fill up.** Some nodes have been observed at 97% usage due to stale files from other users. The documented "purge every 2 weeks" policy is not consistently enforced. Clean up your own stale files with:
 ```bash
@@ -188,9 +196,12 @@ rm -rf /work/users/martpali/nxf-*
 
 ### SLURM Configuration
 
+- All Orion-specific settings are in `conf/orion.config` (loaded by `-profile orion`).
 - Partition: `orion` — 6 compute nodes (cn-31 to cn-35, cn-37), 384 CPUs, ~1.5 TB RAM each, shared
-- `afterScript` runs `chgrp -R fjellheimlab . && chmod -R g+rwX .` on every task for quota accounting
+- `scratch = '$TMPDIR'` — all tasks run on node-local 3.5 TB SSD; outputs rsync'd back to NFS work dir
+- `beforeScript` sets setgid+umask on scratch dir AND sets setgid on NFS work dir (via `$NXF_TASK_WORKDIR`) for correct group ownership; `afterScript` runs `chgrp -R <group> .` as safety net — both conditional on `params.unix_group`
 - Submit rate limit: 30/min, queue size: 20
+- Problem nodes can be excluded via `--orion_exclude_nodes cn-37`
 - Custom containers (TD2, Lace) are local `.sif` files, not pulled from registries
 - `$APPTAINER_TMPDIR` is automatically set by SLURM prolog on compute nodes
 
@@ -228,6 +239,6 @@ The original TrEMBL DB had 252M sequences. Its k-mer index was ~554 GB, requirin
 1. **Lace caps at 50 transcripts per cluster** — "WARNING: will only take first 50 transcripts" is expected for highly fragmented clusters. Adjustable via `--maxTrans` but 50 is fine.
 2. **Taxonomy filter removes no-hit sequences too** — `mmseqs filtertaxdb` drops sequences with no taxonomy hit, not just non-plant. This is intentional (removes contamination).
 3. **Corset cluster count scales with samples** — 1 sample → ~50K clusters; 40 samples across 10 conditions → ~244K clusters. This is correct condition-aware behavior.
-4. **MMseqs2 taxonomy memory** — UniRef90 DB k-mer index is ~218 GB; needs ~400 GB allocation to avoid target splitting. Config retry ladder: 400/600/800 GB.
-5. **Sample naming convention** — `{SPECIES}{IndivID}_{Timepoint}_{Tissue}` (e.g., `BMAX56_T4_L`). The `extractCondition()` helper in `main.nf` takes the last two `_`-delimited parts. Changing sample naming breaks Corset condition grouping.
+4. **MMseqs2 taxonomy memory** — UniRef90 DB k-mer index is ~218 GB; needs ~400 GB allocation to avoid target splitting. Config retry ladder: 150/200/250 GB for chunked mode.
+5. **Sample naming convention** — `{SPECIES}{IndivID}_{Timepoint}_{Tissue}` (e.g., `BMAX56_T4_L`). The `extractCondition()` helper in `main.nf` takes the last two `_`-delimited parts. If sample names don't follow this convention, add a `condition` column to the samplesheet CSV to provide explicit Corset groupings.
 6. **Frameshift correction uses separate containers** — Diamond blastx runs in the Diamond container, then the Python correction script runs in the BioPython container. These were split because the Diamond container lacks Python3. The `diamond_python` container in `containers/` is a legacy build.

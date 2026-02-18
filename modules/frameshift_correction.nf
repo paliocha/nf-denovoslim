@@ -1,9 +1,10 @@
 /*
  * FRAMESHIFT_CORRECTION — single-process Diamond blastx + Python correction
  *
- * Diamond blastx copies uniref90.dmnd to node-local SSD ($TMPDIR) to avoid
- * NFS memory-mapping issues (SIGBUS). Python correction is a separate process
- * so Diamond results stay cached if the lightweight correction step needs re-running.
+ * With scratch enabled (Orion), the task CWD is already on node-local SSD.
+ * The Diamond DB is copied to CWD to avoid NFS memory-mapping issues (SIGBUS).
+ * Python correction is a separate process so Diamond results stay cached if
+ * the lightweight correction step needs re-running.
  */
 
 process DIAMOND_BLASTX {
@@ -19,15 +20,11 @@ process DIAMOND_BLASTX {
 
     script:
     """
-    # ── Use node-local SSD to avoid NFS SIGBUS on memory-mapped .dmnd ──
-    LOCAL=\${TMPDIR:-/tmp}/diamond_blastx_\$\$
-    mkdir -p \$LOCAL
-
-    # Copy DB to local SSD (~86 GB, ~1-2 min)
-    echo "Copying Diamond DB to local storage (\$LOCAL)..."
-    cp "${diamond_db}" \$LOCAL/
-    LOCAL_DB=\$LOCAL/\$(basename "${diamond_db}")
-    echo "DB copy complete (\$(du -sh \$LOCAL | cut -f1))."
+    # ── Copy Diamond DB to CWD (node-local SSD when scratch is enabled) ──
+    echo "Copying Diamond DB to local storage..."
+    cp "${diamond_db}" .
+    LOCAL_DB=./\$(basename "${diamond_db}")
+    echo "DB copy complete (\$(du -sh \$LOCAL_DB | cut -f1))."
 
     # Run Diamond blastx with frameshift-tolerant alignment
     diamond blastx \\
@@ -39,13 +36,9 @@ process DIAMOND_BLASTX {
         -q ${supertranscripts_fasta} \\
         --outfmt 6 qseqid qstart qend qlen qframe btop \\
         -p ${task.cpus} \\
-        --tmpdir \$LOCAL \\
         -o diamond_frameshift.tsv
 
     echo "Diamond blastx complete: \$(wc -l < diamond_frameshift.tsv) alignments"
-
-    # Cleanup local storage (also cleaned by SLURM epilog)
-    rm -rf \$LOCAL
     """
 }
 

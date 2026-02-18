@@ -64,7 +64,7 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
                 v              v                  v              |
   MMSEQS2_SEARCH_CHUNKED  SALMON_QUANT_FINAL <-------------------+
    (split -> search         (gene-level)
-    -> merge)                    |
+    -> merge)                   |
    (vs SwissProt + Pfam)        v
                 |          VALIDATE_IDS
                 v          (ID consistency)
@@ -115,8 +115,9 @@ Steps 5b, 5c, and 6-9 use data-level parallelization: input sequences are split 
 
 - [Nextflow](https://www.nextflow.io/) >= 23.04
 - [Apptainer](https://apptainer.org/) (or Singularity/Docker)
-- Pre-built MMseqs2 databases: SwissProt, Pfam, eggNOG7, UniProt/TrEMBL (for taxonomy)
+- Pre-built MMseqs2 databases: SwissProt, Pfam, eggNOG7, UniRef90 (for taxonomy)
 - Pre-built Diamond database: UniRef90 (for frameshift correction)
+- eggNOG annotation TSV (for TransAnnot)
 - Pre-built TD2 container (`containers/td2/td2_1.0.8.sif`)
 - Pre-built Lace container (`containers/lace/lace_1.14.1_patched.sif`)
 
@@ -133,19 +134,35 @@ nextflow run main.nf \
     --mmseqs2_eggnog /path/to/eggNOG7DB \
     --mmseqs2_taxonomy_db /path/to/UniRef90taxdb \
     --diamond_db /path/to/uniref90.dmnd \
+    --eggnog_annotations /path/to/eggnog_annotations.tsv \
+    --busco_lineage poales_odb12 \
+    --outdir /path/to/results
+```
+
+On NMBU Orion, use `-profile apptainer,orion` instead — database paths are pre-configured in `conf/orion.config`:
+
+```bash
+# Orion — DB paths loaded from conf/orion.config
+sbatch run_species.sh BMAX
+# Or manually:
+nextflow run main.nf \
+    -profile apptainer,orion \
+    --trinity_fasta /path/to/Trinity.fasta \
+    --samplesheet samples.csv \
+    --species_label BMAX \
     --outdir /path/to/results
 ```
 
 ### Samplesheet format
 
-CSV with nf-core/rnaseq-compatible format:
+CSV with nf-core/rnaseq-compatible format, plus an optional `condition` column:
 
 ```csv
-sample,fastq_1,fastq_2,strandedness
-SPECIES01_T1_L,/path/to/R1.fq.gz,/path/to/R2.fq.gz,unstranded
+sample,fastq_1,fastq_2,strandedness,condition
+SPECIES01_T1_L,/path/to/R1.fq.gz,/path/to/R2.fq.gz,unstranded,T1_L
 ```
 
-The `condition` for Corset clustering is extracted automatically from the sample name as `{Timepoint}_{Tissue}` (e.g., `T1_L`).
+If the `condition` column is omitted, the condition for Corset clustering is extracted automatically from the sample name as `{Timepoint}_{Tissue}` (last two `_`-separated parts, e.g., `BMAX56_T4_L` → `T4_L`). Supplying the column explicitly is recommended for non-standard naming conventions.
 
 ### Profiles
 
@@ -153,10 +170,35 @@ The `condition` for Corset clustering is extracted automatically from the sample
 |---------|-------------|
 | `apptainer` | Run with Apptainer containers |
 | `singularity` | Run with Singularity containers |
-| `slurm` | Submit jobs to SLURM scheduler |
 | `docker` | Run with Docker containers |
+| `slurm` | Generic SLURM scheduling (no site-specific settings) |
+| `orion` | NMBU Orion HPC — sets DB paths, SLURM queue, filesystem bind mounts, group quota fix |
+| `highmem` | Resource caps for large-memory nodes (32 CPUs, 1200 GB) |
+| `standard` | Resource caps for mid-range nodes (16 CPUs, 128 GB) — **default** |
+| `test` | Minimal resources for testing (4 CPUs, 16 GB) |
 
-### Key parameters
+Combine container + executor + optional resource profiles:
+```bash
+-profile apptainer,orion          # Orion HPC (includes highmem resources + SLURM)
+-profile apptainer,slurm,highmem  # Other large-memory SLURM cluster
+-profile docker                   # Local Docker (standard resources)
+```
+
+### Database parameters
+
+All database paths default to `null` and **must** be provided via CLI, run scripts, or a site-specific config (like `conf/orion.config`):
+
+| Parameter | Description |
+|-----------|-------------|
+| `--mmseqs2_swissprot` | MMseqs2 SwissProt DB |
+| `--mmseqs2_pfam` | MMseqs2 Pfam DB |
+| `--mmseqs2_eggnog` | MMseqs2 eggNOG profiles DB |
+| `--mmseqs2_taxonomy_db` | MMseqs2 UniRef90 taxonomy DB |
+| `--diamond_db` | Diamond UniRef90 DB for frameshift correction |
+| `--eggnog_annotations` | eggNOG annotation TSV for TransAnnot |
+| `--busco_lineage` | BUSCO lineage dataset (e.g., `poales_odb12`) |
+
+### Other parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -166,9 +208,8 @@ The `condition` for Corset clustering is extracted automatically from the sample
 | `--mmseqs2_nt_id` | `0.97` | Nucleotide dedup identity threshold |
 | `--mmseqs2_nt_cov` | `0.8` | Nucleotide dedup coverage threshold |
 | `--filter_taxon` | `35493` | NCBI taxon ID to keep (includes all descendants) |
-| `--diamond_db` | required | Path to Diamond database (e.g., UniRef90) for frameshift correction |
-| `--busco_lineage` | `poales_odb12` | BUSCO lineage dataset |
 | `--sortmerna_db_dir` | `null` | Pre-downloaded rRNA database dir (skips download) |
+| `--unix_group` | `null` | Unix group for shared quota accounting (Orion: `fjellheimlab`) |
 | `--outdir` | `./results` | Output directory |
 
 #### Chunking parameters

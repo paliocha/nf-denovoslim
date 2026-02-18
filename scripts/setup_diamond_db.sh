@@ -1,5 +1,10 @@
 #!/bin/bash
 #
+# DEPRECATED: This script builds a Diamond DB from SwissProt, but the pipeline
+# now uses UniRef90 for frameshift correction. Use build_uniref90_diamond.sh instead.
+#
+# Kept for reference only — do not use for production runs.
+#
 # Setup Diamond database for frameshift correction
 # Extracts SwissProt FASTA from existing MMseqs2 DB and builds Diamond index
 #

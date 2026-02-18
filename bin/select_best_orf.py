@@ -11,9 +11,15 @@ Outputs:
 """
 
 import csv
+import re
 import sys
 from collections import defaultdict
 from Bio import SeqIO
+
+if len(sys.argv) != 5:
+    print(f"Usage: {sys.argv[0]} <psauron_score.csv> <TD2.pep> <TD2.gff3> <species_label>",
+          file=sys.stderr)
+    sys.exit(1)
 
 psauron_csv = sys.argv[1]
 td2_pep     = sys.argv[2]
@@ -51,12 +57,20 @@ with open("orf_to_gene_map.tsv", "w") as mapf:
             kept_orfs.add(best_orf_id)
 
 # --- Filter GFF3 ---
+# Parse the ID= attribute to avoid substring false positives
+# (e.g. gene1.p1 matching gene1.p10)
+id_pattern = re.compile(r'ID=([^;]+)')
+parent_pattern = re.compile(r'Parent=([^;]+)')
 with open(td2_gff3) as gff_in, open("best_orfs.gff3", "w") as gff_out:
     for line in gff_in:
         if line.startswith("#"):
             gff_out.write(line)
             continue
-        if any(orf_id in line for orf_id in kept_orfs):
+        id_match = id_pattern.search(line)
+        parent_match = parent_pattern.search(line)
+        gff_id = id_match.group(1) if id_match else None
+        gff_parent = parent_match.group(1) if parent_match else None
+        if (gff_id and gff_id in kept_orfs) or (gff_parent and gff_parent in kept_orfs):
             gff_out.write(line)
 
 n_genes = len(orfs_by_gene)

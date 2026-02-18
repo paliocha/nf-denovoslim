@@ -19,8 +19,8 @@ process VALIDATE_IDS {
     # Extract Salmon gene IDs
     cut -f1 ${quant_sf} | tail -n+2 | sort > ids_salmon.txt
 
-    # Extract .faa protein IDs
-    grep "^>" ${faa} | sed 's/^>//' | sort > ids_faa.txt
+    # Extract .faa protein IDs (first word only, strip description)
+    grep "^>" ${faa} | awk '{sub(/^>/, ""); print \$1}' | sort > ids_faa.txt
 
     # Proteins must be a subset of Salmon genes
     ORPHANS=\$(comm -23 ids_faa.txt ids_salmon.txt | wc -l)

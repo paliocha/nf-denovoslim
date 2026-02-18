@@ -10,10 +10,11 @@
  */
 
 process SPLIT_SUPERTRANSCRIPTS_FS {
-    tag "${params.species_label}"
+    tag "${species_label}"
 
     input:
     path(supertranscripts_fasta)
+    val(species_label)
 
     output:
     path("chunks/fs_chunk_*.fasta"), emit: chunks
@@ -50,10 +51,12 @@ process SPLIT_SUPERTRANSCRIPTS_FS {
 }
 
 process DIAMOND_BLASTX_CHUNK {
-    tag "${params.species_label}_chunk_${chunk_idx}"
+    tag "${species_label}_chunk_${chunk_idx}"
 
     input:
     tuple val(chunk_idx), path(chunk_fasta)
+    val(diamond_db)
+    val(species_label)
 
     output:
     tuple val(chunk_idx), path(chunk_fasta), path("diamond_fs_${chunk_idx}.tsv"), emit: results
@@ -61,7 +64,7 @@ process DIAMOND_BLASTX_CHUNK {
     script:
     """
     # Prepare Diamond DB
-    DB_PATH="${params.diamond_db}"
+    DB_PATH="${diamond_db}"
     if [ -z "\$DB_PATH" ] || [ "\$DB_PATH" = "null" ]; then
         echo "ERROR: --diamond_db is required." >&2
         exit 1
@@ -89,10 +92,11 @@ process DIAMOND_BLASTX_CHUNK {
 }
 
 process CORRECT_FRAMESHIFTS_CHUNK {
-    tag "${params.species_label}_chunk_${chunk_idx}"
+    tag "${species_label}_chunk_${chunk_idx}"
 
     input:
     tuple val(chunk_idx), path(chunk_fasta), path(diamond_tsv)
+    val(species_label)
 
     output:
     tuple val(chunk_idx), path("corrected_${chunk_idx}.fasta"), emit: fasta
@@ -111,13 +115,12 @@ process CORRECT_FRAMESHIFTS_CHUNK {
 }
 
 process MERGE_FRAMESHIFT_RESULTS {
-    tag "${params.species_label}"
-    publishDir "${params.outdir}/frameshift_correction", mode: 'copy',
-        pattern: 'frameshift_stats.txt'
+    tag "${species_label}"
 
     input:
     path("corrected_*.fasta")
     path("stats_*.txt")
+    val(species_label)
 
     output:
     path("supertranscripts_corrected.fasta"), emit: fasta
