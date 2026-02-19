@@ -1,14 +1,5 @@
 /*
- * Salmon quantification — maps reads and quantifies expression
- *
- * Usage with DSL2 aliasing:
- *   include { SALMON_QUANT as SALMON_QUANT_INITIAL } from './modules/salmon_quant'
- *   include { SALMON_QUANT as SALMON_QUANT_FINAL   } from './modules/salmon_quant'
- *
- * Per-alias flags via conf/base.config:
- *   withName: 'SALMON_QUANT_INITIAL' { ext.args = '--hardFilter --dumpEq' }
- *   withName: 'SALMON_QUANT_FINAL'   { ext.args = '--rangeFactorizationBins 4'
- *                                       publishDir = [...] }
+ * Salmon quantification
  */
 
 process SALMON_QUANT {

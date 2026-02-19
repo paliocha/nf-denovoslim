@@ -1,10 +1,6 @@
 /*
- * MMSEQS2_TAXONOMY — single-process taxonomy classification + filtering
- *
- * With scratch enabled (Orion), the task CWD is already on node-local SSD.
- * The taxonomy DB is copied to CWD for fast memory-mapped access.
- * With 1.5 TB RAM per node and 3.5 TB local SSD, this is faster than chunking
- * because the DB is loaded only once instead of N times.
+ * MMseqs2 taxonomy classification + filtering
+ * DB is copied to CWD (node-local SSD when scratch is enabled).
  */
 
 process MMSEQS2_TAXONOMY {
@@ -24,13 +20,11 @@ process MMSEQS2_TAXONOMY {
 
     script:
     """
-    # ── Copy taxonomy DB to CWD (node-local SSD when scratch is enabled) ──
-    echo "Copying taxonomy DB to local storage..."
+    # Copy taxonomy DB to CWD (node-local SSD when scratch is enabled)
     for f in ${taxonomy_db}*; do
         cp "\$f" .
     done
     LOCAL_DB=./\$(basename ${taxonomy_db})
-    echo "DB copy complete (\$(du -sh \$LOCAL_DB* | tail -1 | cut -f1))."
 
     # 1. Create MMseqs2 query DB
     mmseqs createdb ${supertranscripts_fasta} queryDB
@@ -69,6 +63,6 @@ Matching (kept):           \$KEPT (\$(awk "BEGIN{printf \\"%.1f\\", \$KEPT/\$TOT
 Non-matching (removed):    \$REMOVED (\$(awk "BEGIN{printf \\"%.1f\\", \$REMOVED/\$TOTAL*100}")%)
 EOF
 
-    echo "Taxonomy filter: kept \$KEPT / \$TOTAL SuperTranscripts (removed \$REMOVED)"
+    echo "Taxonomy filter: kept \$KEPT / \$TOTAL SuperTranscripts"
     """
 }

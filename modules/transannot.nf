@@ -1,23 +1,12 @@
 /*
- * TransAnnot — functional annotation against SwissProt + Pfam + eggNOG
+ * TransAnnot — functional annotation (SwissProt + Pfam + eggNOG)
  *
- * TransAnnot 4.0.0 embeds an annotate.sh that downloads the eggNOG 5.0
- * annotation file and uses AWK logic that assumes e5 naming (no pipes in
- * OG family names). The eggNOG 7 profile DB headers use pipes in family
- * names (e.g. "14|3|3@171637|ApB-57.faa.gz") while the annotation file
- * uses hyphens ("14-3-3@171637|ApB-57.faa.gz"), causing exact matching
- * to fail for ~98% of eggNOG hits.
- *
- * Fix (matching PR soedinglab/transannot#7):
- *   1. Curl wrapper intercepts the e5 download, providing our e7 file
- *   2. After transannot finishes (Pfam + SwissProt correct, eggNOG broken),
- *      we re-run convertalis on the preserved profile search results
- *   3. Apply corrected AWK with pipe→hyphen normalization + .faa.gz stripping
- *   4. Merge corrected eggNOG rows into the final output
+ * eggNOG v7 headers use pipes in family names while the annotation file
+ * uses hyphens, breaking the built-in AWK matching. After transannot runs,
+ * we re-run convertalis with pipe→hyphen normalization to fix eggNOG hits.
  */
 
 process TRANSANNOT {
-    label 'process_high'
     tag "${species_label}"
 
     input:

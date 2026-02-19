@@ -1,9 +1,8 @@
 /*
- * SortMeRNA — rRNA filtering (matching nf-core/rnaseq v3.22.2)
+ * SortMeRNA — rRNA filtering
  */
 
 process SORTMERNA_INDEX {
-    label 'process_medium'
     tag 'sortmerna_index'
 
     input:
@@ -27,7 +26,6 @@ process SORTMERNA_INDEX {
 }
 
 process SORTMERNA {
-    label 'process_high'
     tag "${sample_id}"
 
     input:

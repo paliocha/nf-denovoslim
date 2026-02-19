@@ -1,8 +1,6 @@
 /*
- * MMseqs2 homology search — single-process (for small databases like SwissProt)
- *
- * For small DBs the overhead of chunking/merging exceeds the search time itself.
- * The DB path is passed as val (not staged) to avoid copying multi-GB databases.
+ * MMseqs2 homology search (single-process, for DBs like SwissProt/Pfam)
+ * DB path is passed as val to avoid staging multi-GB databases.
  */
 
 process MMSEQS2_SEARCH {
@@ -28,7 +26,5 @@ process MMSEQS2_SEARCH {
         --split-memory-limit ${mem_gb}G \\
         ${args} \\
         --threads ${task.cpus}
-
-    echo "Search complete: \$(wc -l < ${tag_name}_alnRes.m8) alignments"
     """
 }

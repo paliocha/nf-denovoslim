@@ -1,81 +1,64 @@
 #!/usr/bin/env nextflow
 
 /*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    nf-denovoslim — Trinity Assembly Thinning Pipeline
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Collapses a fragmented Trinity de novo transcriptome assembly into a non-redundant
-    gene set with SuperTranscripts, gene-level Salmon quantification, and one best
-    protein per gene.
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
+ * nf-denovoslim — collapse a Trinity de novo transcriptome into a
+ * non-redundant gene set with SuperTranscripts, one best protein per
+ * gene, gene-level Salmon quantification, and functional annotation.
+ */
 
-// ──────────────────────────────────────────────────────────────────────────────
-//  Module imports (DSL2 aliasing for reusable processes)
-// ──────────────────────────────────────────────────────────────────────────────
+// --- Module imports ---
 
-include { SORTMERNA_INDEX                            } from './modules/sortmerna'
-include { SORTMERNA                                  } from './modules/sortmerna'
-// MMseqs2 nucleotide dedup removed — full Trinity goes to Salmon→Corset→Lace
-// to preserve multi-mapping signal for proper gene clustering (see paper Methods).
-// include { MMSEQS2_CLUSTER_NT                         } from './modules/mmseqs2_cluster_nt'
-include { SALMON_INDEX as SALMON_INDEX_INITIAL       } from './modules/salmon_index'
-include { SALMON_INDEX as SALMON_INDEX_FINAL         } from './modules/salmon_index'
-include { SALMON_QUANT as SALMON_QUANT_INITIAL       } from './modules/salmon_quant'
-include { SALMON_QUANT as SALMON_QUANT_FINAL         } from './modules/salmon_quant'
-include { CORSET                                     } from './modules/corset'
-include { LACE                                       } from './modules/lace'
-include { MMSEQS2_TAXONOMY                            } from './modules/mmseqs2_taxonomy'
-include { DIAMOND_BLASTX                              } from './modules/frameshift_correction'
-include { CORRECT_FRAMESHIFTS                          } from './modules/frameshift_correction'
-include { TD2_LONGORFS                                               } from './modules/td2_longorfs'
-include { MMSEQS2_SEARCH as MMSEQS2_SEARCH_SWISSPROT                  } from './modules/mmseqs2_search'
-include { MMSEQS2_SEARCH as MMSEQS2_SEARCH_PFAM                       } from './modules/mmseqs2_search'
-include { TD2_PREDICT                                                } from './modules/td2_predict'
-include { SELECT_BEST_ORF                            } from './modules/select_best_orf'
-include { VALIDATE_IDS                               } from './modules/validate_ids'
-include { BUSCO_QC                                   } from './modules/busco'
-include { TRANSANNOT                                 } from './modules/transannot'
-include { THINNING_REPORT                            } from './modules/thinning_report'
+include { SORTMERNA_INDEX                  } from './modules/sortmerna'
+include { SORTMERNA                        } from './modules/sortmerna'
+include { SALMON_INDEX as SALMON_INDEX_INITIAL } from './modules/salmon_index'
+include { SALMON_INDEX as SALMON_INDEX_FINAL   } from './modules/salmon_index'
+include { SALMON_QUANT as SALMON_QUANT_INITIAL } from './modules/salmon_quant'
+include { SALMON_QUANT as SALMON_QUANT_FINAL   } from './modules/salmon_quant'
+include { CORSET                           } from './modules/corset'
+include { LACE                             } from './modules/lace'
+include { MMSEQS2_TAXONOMY                 } from './modules/mmseqs2_taxonomy'
+include { DIAMOND_BLASTX                   } from './modules/frameshift_correction'
+include { CORRECT_FRAMESHIFTS              } from './modules/frameshift_correction'
+include { TD2_LONGORFS                     } from './modules/td2_longorfs'
+include { MMSEQS2_SEARCH as MMSEQS2_SEARCH_SWISSPROT } from './modules/mmseqs2_search'
+include { MMSEQS2_SEARCH as MMSEQS2_SEARCH_PFAM      } from './modules/mmseqs2_search'
+include { TD2_PREDICT                      } from './modules/td2_predict'
+include { SELECT_BEST_ORF                  } from './modules/select_best_orf'
+include { VALIDATE_IDS                     } from './modules/validate_ids'
+include { BUSCO as BUSCO_TRINITY           } from './modules/busco'
+include { BUSCO as BUSCO_QC                } from './modules/busco'
+include { TRANSANNOT                       } from './modules/transannot'
+include { THINNING_REPORT                  } from './modules/thinning_report'
 
-// ──────────────────────────────────────────────────────────────────────────────
-//  Input validation
-// ──────────────────────────────────────────────────────────────────────────────
+// --- Input validation ---
 
 if (!params.trinity_fasta)       { error "Please provide --trinity_fasta" }
 if (!params.samplesheet)         { error "Please provide --samplesheet" }
-if (!params.mmseqs2_swissprot)   { error "Please provide --mmseqs2_swissprot (path to MMseqs2 SwissProt DB)" }
-if (!params.mmseqs2_pfam)        { error "Please provide --mmseqs2_pfam (path to MMseqs2 Pfam DB)" }
-if (!params.mmseqs2_eggnog)      { error "Please provide --mmseqs2_eggnog (path to MMseqs2 eggNOG DB)" }
-if (!params.mmseqs2_taxonomy_db) { error "Please provide --mmseqs2_taxonomy_db (path to MMseqs2 taxonomy DB)" }
-if (!params.eggnog_annotations)  { error "Please provide --eggnog_annotations (path to eggNOG annotation TSV)" }
-if (!params.busco_lineage)       { error "Please provide --busco_lineage (e.g. 'poales_odb12', 'eudicots_odb12')" }
+if (!params.mmseqs2_swissprot)   { error "Please provide --mmseqs2_swissprot" }
+if (!params.mmseqs2_pfam)        { error "Please provide --mmseqs2_pfam" }
+if (!params.mmseqs2_eggnog)      { error "Please provide --mmseqs2_eggnog" }
+if (!params.mmseqs2_taxonomy_db) { error "Please provide --mmseqs2_taxonomy_db" }
+if (!params.diamond_db)          { error "Please provide --diamond_db" }
+if (!params.eggnog_annotations)  { error "Please provide --eggnog_annotations" }
+if (!params.busco_lineage)       { error "Please provide --busco_lineage" }
 
-// ──────────────────────────────────────────────────────────────────────────────
-//  Helper: extract condition from sample name (fallback if no 'condition' column)
-//  e.g. BMAX56_T4_L -> T4_L
-// ──────────────────────────────────────────────────────────────────────────────
+// --- Helper: extract condition from sample name ---
+// e.g. BMAX56_T4_L -> T4_L
 
 def extractCondition(sample_name) {
     def parts = sample_name.split('_')
     if (parts.size() < 3) {
-        log.warn "Cannot extract condition from sample '${sample_name}' — using full name as condition"
+        log.warn "Cannot extract condition from '${sample_name}' — using full name"
         return sample_name
     }
-    // Last two parts are Timepoint and Tissue
     return "${parts[-2]}_${parts[-1]}"
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-//  Main workflow
-// ──────────────────────────────────────────────────────────────────────────────
+// --- Main workflow ---
 
 workflow {
 
-    // --- Parse samplesheet (nf-core/rnaseq format) ---
-    // CSV: sample,fastq_1,fastq_2,strandedness[,condition]
-    // If 'condition' column is present, it is used for Corset grouping;
-    // otherwise the condition is extracted from sample name (last two _-separated parts).
+    // Parse samplesheet: sample,fastq_1,fastq_2,strandedness[,condition]
     ch_samplesheet = Channel
         .fromPath(params.samplesheet, checkIfExists: true)
         .splitCsv(header: true)
@@ -87,14 +70,13 @@ workflow {
             [ sample_id, condition, reads_1, reads_2 ]
         }
 
-    // --- Trinity assembly ---
     ch_trinity = Channel.fromPath(params.trinity_fasta, checkIfExists: true)
 
-    // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 0: SortMeRNA — rRNA filtering                               ║
-    // ╚══════════════════════════════════════════════════════════════════════╝
+    // BUSCO baseline on raw Trinity (transcriptome mode, no dependencies)
+    BUSCO_TRINITY(ch_trinity, params.species_label, 'trinity')
 
-    // Prepare rRNA databases
+    // -- SortMeRNA: rRNA filtering --
+
     if (params.sortmerna_db_dir) {
         ch_sortmerna_fastas = Channel
             .fromPath("${params.sortmerna_db_dir}/*.fasta")
@@ -106,10 +88,8 @@ workflow {
             .collect()
     }
 
-    // Build index once
     SORTMERNA_INDEX(ch_sortmerna_fastas)
 
-    // Filter each sample
     ch_reads_for_sortmerna = ch_samplesheet
         .map { sample_id, condition, r1, r2 -> [ sample_id, r1, r2 ] }
 
@@ -119,9 +99,8 @@ workflow {
         SORTMERNA_INDEX.out.index
     )
 
-    // Recombine filtered reads with condition metadata
-    // Derive condition from samplesheet (with condition column support)
-    // Re-read samplesheet to build a lookup map for condition per sample
+    // Rejoin filtered reads with condition metadata (re-read samplesheet
+    // to avoid consuming the queue channel used for reads)
     ch_condition_map = Channel
         .fromPath(params.samplesheet, checkIfExists: true)
         .splitCsv(header: true)
@@ -135,11 +114,7 @@ workflow {
             [ sample_id, cmap[sample_id] ?: extractCondition(sample_id), r1, r2 ]
         }
 
-    // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 1: Salmon initial index + quant (with --dumpEq for Corset)   ║
-    // ║  Index the FULL Trinity assembly so Corset sees all multi-mapping   ║
-    // ║  signal across isoforms — critical for proper gene clustering.      ║
-    // ╚══════════════════════════════════════════════════════════════════════╝
+    // -- Salmon initial quant (full Trinity, --dumpEq for Corset) --
 
     SALMON_INDEX_INITIAL(ch_trinity)
 
@@ -152,16 +127,11 @@ workflow {
         'quant'
     )
 
-    // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 4: Corset — hierarchical transcript-to-gene clustering       ║
-    // ╚══════════════════════════════════════════════════════════════════════╝
+    // -- Corset: transcript-to-gene clustering --
 
-    // Collect all quant directories
     ch_all_quants = SALMON_QUANT_INITIAL.out.quant_dir.collect()
 
-    // Build sample-condition metadata for Corset -g/-n flags
-    // Derived from samplesheet directly (not ch_filtered_reads) to avoid
-    // DSL2 queue-channel fork that splits items between consumers
+    // Build Corset -g/-n from a fresh samplesheet read (avoids queue-channel fork)
     ch_sample_conditions = Channel
         .fromPath(params.samplesheet, checkIfExists: true)
         .splitCsv(header: true)
@@ -174,20 +144,11 @@ workflow {
 
     CORSET(ch_all_quants, ch_sample_conditions, params.species_label)
 
-    // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 5: Lace — build SuperTranscripts from Corset clusters        ║
-    // ╚══════════════════════════════════════════════════════════════════════╝
+    // -- Lace: build SuperTranscripts --
 
-    LACE(
-        ch_trinity,
-        CORSET.out.clust,
-        params.species_label
-    )
+    LACE(ch_trinity, CORSET.out.clust, params.species_label)
 
-    // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 5b: Taxonomy filter — keep only Streptophyta SuperTranscripts║
-    // ║  (Single process on node-local SSD for fast DB I/O)                ║
-    // ╚══════════════════════════════════════════════════════════════════════╝
+    // -- Taxonomy filter (keep Streptophyta) --
 
     MMSEQS2_TAXONOMY(
         LACE.out.fasta,
@@ -197,23 +158,15 @@ workflow {
         params.species_label
     )
 
-    // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 5c: Frameshift correction — fix assembly frameshifts         ║
-    // ║  (Diamond DB copied to node-local SSD; correction cached separately)║
-    // ╚══════════════════════════════════════════════════════════════════════╝
+    // -- Frameshift correction --
 
     DIAMOND_BLASTX(MMSEQS2_TAXONOMY.out.fasta, params.diamond_db, params.species_label)
     CORRECT_FRAMESHIFTS(MMSEQS2_TAXONOMY.out.fasta, DIAMOND_BLASTX.out.tsv, params.species_label)
 
-    // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 6-9: TD2 ORF prediction with homology support                ║
-    // ╚══════════════════════════════════════════════════════════════════════╝
+    // -- ORF prediction (TD2 + homology support) --
 
     TD2_LONGORFS(CORRECT_FRAMESHIFTS.out.fasta, params.species_label)
 
-    // Steps 7 & 8 run in parallel with chunking for 5-8× speedup
-    // Steps 7 & 8 run in parallel — single-process searches (DBs are small enough)
-    // (DB paths passed as val — no staging of multi-GB DBs)
     MMSEQS2_SEARCH_SWISSPROT(
         TD2_LONGORFS.out.longest_orfs_pep,
         params.mmseqs2_swissprot,
@@ -226,7 +179,6 @@ workflow {
         'pfam'
     )
 
-    // Step 9: TD2.Predict with combined homology hits
     TD2_PREDICT(
         CORRECT_FRAMESHIFTS.out.fasta,
         MMSEQS2_SEARCH_SWISSPROT.out.m8,
@@ -235,9 +187,7 @@ workflow {
         params.species_label
     )
 
-    // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 10: Select best ORF per gene                                 ║
-    // ╚══════════════════════════════════════════════════════════════════════╝
+    // -- Best ORF selection --
 
     SELECT_BEST_ORF(
         TD2_PREDICT.out.psauron_scores,
@@ -246,9 +196,7 @@ workflow {
         params.species_label
     )
 
-    // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 11: Salmon final quant on SuperTranscripts (gene-level)      ║
-    // ╚══════════════════════════════════════════════════════════════════════╝
+    // -- Gene-level Salmon quant on SuperTranscripts --
 
     SALMON_INDEX_FINAL(CORRECT_FRAMESHIFTS.out.fasta)
 
@@ -258,11 +206,8 @@ workflow {
         'st_quant'
     )
 
-    // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 12: Validate ID consistency                                  ║
-    // ╚══════════════════════════════════════════════════════════════════════╝
+    // -- ID validation --
 
-    // Use the first sample's quant.sf for ID validation
     ch_first_quant_sf = SALMON_QUANT_FINAL.out.quant_dir
         .first()
         .map { qdir -> file("${qdir}/quant.sf") }
@@ -273,11 +218,9 @@ workflow {
         params.species_label
     )
 
-    // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 13-14: BUSCO QC + TransAnnot (run in parallel)               ║
-    // ╚══════════════════════════════════════════════════════════════════════╝
+    // -- BUSCO QC + TransAnnot (parallel) --
 
-    BUSCO_QC(SELECT_BEST_ORF.out.faa, params.species_label)
+    BUSCO_QC(SELECT_BEST_ORF.out.faa, params.species_label, 'final')
 
     TRANSANNOT(
         SELECT_BEST_ORF.out.faa,
@@ -288,29 +231,23 @@ workflow {
         params.mmseqs2_swissprot
     )
 
-    // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 15: Thinning report                                          ║
-    // ╚══════════════════════════════════════════════════════════════════════╝
+    // -- Thinning report --
 
     THINNING_REPORT(
         ch_trinity,
-        ch_trinity,   // no separate dedup step — full Trinity goes to Corset
         CORRECT_FRAMESHIFTS.out.fasta,
         CORSET.out.clust,
         SELECT_BEST_ORF.out.map,
         SELECT_BEST_ORF.out.faa,
         SALMON_QUANT_INITIAL.out.quant_dir.collect(),
         SALMON_QUANT_FINAL.out.quant_dir.collect(),
+        BUSCO_TRINITY.out.outdir,
         BUSCO_QC.out.outdir,
         VALIDATE_IDS.out.report,
         SORTMERNA.out.log.map { sample_id, log -> log }.collect(),
         params.species_label
     )
 }
-
-// ──────────────────────────────────────────────────────────────────────────────
-//  Completion handler
-// ──────────────────────────────────────────────────────────────────────────────
 
 workflow.onComplete {
     log.info ""

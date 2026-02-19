@@ -1,9 +1,8 @@
 /*
- * TD2 Predict — final ORF prediction with homology support
+ * TD2 Predict — ORF prediction with homology support
  */
 
 process TD2_PREDICT {
-    label 'process_medium'
     tag "${species_label}"
 
     // TD2 writes outputs beside the input fasta

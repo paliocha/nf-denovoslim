@@ -3,7 +3,6 @@
  */
 
 process TD2_LONGORFS {
-    label 'process_low'
     tag "${species_label}"
 
     // TD2 writes to ./{stem}/ beside the input file (strips .fasta extension)

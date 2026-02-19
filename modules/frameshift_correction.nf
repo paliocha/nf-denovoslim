@@ -1,10 +1,7 @@
 /*
- * FRAMESHIFT_CORRECTION — single-process Diamond blastx + Python correction
- *
- * With scratch enabled (Orion), the task CWD is already on node-local SSD.
- * The Diamond DB is copied to CWD to avoid NFS memory-mapping issues (SIGBUS).
- * Python correction is a separate process so Diamond results stay cached if
- * the lightweight correction step needs re-running.
+ * Frameshift correction — Diamond blastx + Python correction
+ * Diamond DB is copied to CWD (node-local SSD when scratch is enabled).
+ * Python correction is a separate process so Diamond results stay cached.
  */
 
 process DIAMOND_BLASTX {
@@ -20,11 +17,9 @@ process DIAMOND_BLASTX {
 
     script:
     """
-    # ── Copy Diamond DB to CWD (node-local SSD when scratch is enabled) ──
-    echo "Copying Diamond DB to local storage..."
+    # Copy Diamond DB to CWD (node-local SSD when scratch is enabled)
     cp "${diamond_db}" .
     LOCAL_DB=./\$(basename "${diamond_db}")
-    echo "DB copy complete (\$(du -sh \$LOCAL_DB | cut -f1))."
 
     # Run Diamond blastx with frameshift-tolerant alignment
     diamond blastx \\
@@ -37,8 +32,6 @@ process DIAMOND_BLASTX {
         --outfmt 6 qseqid qstart qend qlen qframe btop \\
         -p ${task.cpus} \\
         -o diamond_frameshift.tsv
-
-    echo "Diamond blastx complete: \$(wc -l < diamond_frameshift.tsv) alignments"
     """
 }
 
@@ -61,7 +54,5 @@ process CORRECT_FRAMESHIFTS {
         ${diamond_tsv} \\
         supertranscripts_corrected.fasta \\
         > frameshift_stats.txt
-
-    echo "Frameshift correction: \$(grep -c '^>' supertranscripts_corrected.fasta) sequences"
     """
 }

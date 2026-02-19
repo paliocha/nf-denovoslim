@@ -1,10 +1,8 @@
 /*
- * Corset — hierarchical transcript-to-gene clustering with condition-aware
- *          paralog splitting, using Salmon equivalence classes
+ * Corset — transcript-to-gene clustering using Salmon equivalence classes
  */
 
 process CORSET {
-    label 'process_high'
     tag "${species_label}"
 
     input:

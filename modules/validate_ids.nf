@@ -1,9 +1,8 @@
 /*
- * VALIDATE_IDS — sanity check that .faa IDs are a subset of Salmon gene IDs
+ * VALIDATE_IDS — check .faa IDs are a subset of Salmon gene IDs
  */
 
 process VALIDATE_IDS {
-    label 'process_low'
     tag "${species_label}"
 
     input:

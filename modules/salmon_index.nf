@@ -1,12 +1,5 @@
 /*
- * Salmon index — builds a Salmon index from a FASTA reference
- *
- * Usage with DSL2 aliasing:
- *   include { SALMON_INDEX as SALMON_INDEX_INITIAL } from './modules/salmon_index'
- *   include { SALMON_INDEX as SALMON_INDEX_FINAL   } from './modules/salmon_index'
- *
- * Per-alias flags via conf/base.config:
- *   withName: 'SALMON_INDEX_INITIAL' { ext.args = '--keepDuplicates' }
+ * Salmon index
  */
 
 process SALMON_INDEX {

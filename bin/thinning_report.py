@@ -3,10 +3,11 @@
 
 Usage:
     thinning_report.py <species_label> \\
-        <trinity_fasta> <deduped_fasta> <supertranscripts_fasta> \\
+        <trinity_fasta> <supertranscripts_fasta> \\
         <grouper_clust> <orf_to_gene_map> <faa> \\
         <initial_quant_dirs> <final_quant_dirs> \\
-        <busco_summary> <id_validation> <sortmerna_logs>
+        <busco_trinity_summary> <busco_final_summary> \\
+        <id_validation> <sortmerna_logs>
 
 Outputs:
     {species_label}_thinning_report.txt
@@ -99,23 +100,23 @@ def fmt(number):
 
 def main():
     if len(sys.argv) < 12:
-        print(f"Usage: {sys.argv[0]} <species_label> <trinity.fasta> <deduped.fasta> "
+        print(f"Usage: {sys.argv[0]} <species_label> <trinity.fasta> "
               f"<supertranscripts.fasta> <grouper_clust> <orf_map> <faa> "
-              f"<initial_quant_dirs> <final_quant_dirs> <busco_summary> "
-              f"<id_validation> [sortmerna_logs]",
+              f"<initial_quant_dirs> <final_quant_dirs> <busco_trinity_summary> "
+              f"<busco_final_summary> <id_validation> [sortmerna_logs]",
               file=sys.stderr)
         sys.exit(1)
 
     species       = sys.argv[1]
     trinity_fasta = sys.argv[2]
-    deduped_fasta = sys.argv[3]
-    st_fasta      = sys.argv[4]
-    grouper_clust = sys.argv[5]
-    orf_map       = sys.argv[6]
-    faa_file      = sys.argv[7]
-    initial_qdir  = sys.argv[8]   # comma-separated list of dirs
-    final_qdir    = sys.argv[9]   # comma-separated list of dirs
-    busco_summary = sys.argv[10]
+    st_fasta      = sys.argv[3]
+    grouper_clust = sys.argv[4]
+    orf_map       = sys.argv[5]
+    faa_file      = sys.argv[6]
+    initial_qdir  = sys.argv[7]   # comma-separated list of dirs
+    final_qdir    = sys.argv[8]   # comma-separated list of dirs
+    busco_trinity = sys.argv[9]
+    busco_final   = sys.argv[10]
     id_validation = sys.argv[11]
     sortmerna_arg = sys.argv[12] if len(sys.argv) > 12 else ""
 
@@ -134,12 +135,10 @@ def main():
     # ── Sequence counts and lengths ──────────────────────────────────────
 
     trinity_lengths  = count_fasta(trinity_fasta)
-    deduped_lengths  = count_fasta(deduped_fasta)
     st_lengths       = count_fasta(st_fasta)
     protein_lengths  = count_fasta(faa_file)
 
     n_trinity  = len(trinity_lengths)
-    n_deduped  = len(deduped_lengths)
     n_genes    = len(st_lengths)
     n_proteins = len(protein_lengths)
 
@@ -184,12 +183,17 @@ def main():
     n_zero_init  = sum(1 for t in init_mean_tpms if t == 0)
     n_zero_final = sum(1 for t in final_mean_tpms if t == 0)
 
-    # ── BUSCO summary ────────────────────────────────────────────────────
+    # ── BUSCO summaries ────────────────────────────────────────────────
 
-    busco_text = ""
-    if os.path.isfile(busco_summary):
-        with open(busco_summary) as f:
-            busco_text = f.read().strip()
+    busco_trinity_text = ""
+    if os.path.isfile(busco_trinity):
+        with open(busco_trinity) as f:
+            busco_trinity_text = f.read().strip()
+
+    busco_final_text = ""
+    if os.path.isfile(busco_final):
+        with open(busco_final) as f:
+            busco_final_text = f.read().strip()
 
     # ── ID validation ────────────────────────────────────────────────────
 
@@ -209,9 +213,6 @@ def main():
         # --- Section 1: rRNA removal ---
         r.write("1. rRNA REMOVAL (SortMeRNA)\n")
         r.write("-" * 40 + "\n")
-        r.write("  WHY: Ribosomal RNA can dominate RNA-seq libraries (up to 80% in\n")
-        r.write("  poly-A-depleted preps). rRNA reads inflate expression estimates\n")
-        r.write("  and waste mapping effort, so they are filtered before quantification.\n\n")
         if sortmerna_stats:
             total_reads = sum(s['total'] for s in sortmerna_stats)
             total_rrna  = sum(s['rrna'] for s in sortmerna_stats)
@@ -234,14 +235,7 @@ def main():
         # --- Section 2: Assembly reduction ---
         r.write("2. ASSEMBLY REDUCTION\n")
         r.write("-" * 40 + "\n")
-        r.write("  WHY: De novo Trinity assemblies are highly fragmented, containing\n")
-        r.write("  many near-identical isoforms, partial duplicates, and chimeras.\n")
-        r.write("  Successive deduplication (MMseqs2) and expression-aware clustering\n")
-        r.write("  (Corset + Lace) collapse these into a non-redundant\n")
-        r.write("  gene set suitable for quantification and downstream analysis.\n\n")
         r.write(f"  Original Trinity transcripts:     {fmt(n_trinity)}\n")
-        r.write(f"  After MMseqs2 97% nt dedup:       {fmt(n_deduped)}  "
-                f"({n_deduped/n_trinity*100:.1f}% retained)\n")
         r.write(f"  After Corset -> Lace:              {fmt(n_genes)}  "
                 f"({n_genes/n_trinity*100:.1f}% of original)\n")
         r.write(f"  Genes with predicted ORF:          {fmt(n_proteins)}  "
@@ -252,14 +246,9 @@ def main():
         # --- Section 3: Sequence lengths ---
         r.write("3. SEQUENCE LENGTH DISTRIBUTION (nt)\n")
         r.write("-" * 40 + "\n")
-        r.write("  WHY: Length distributions reveal whether the collapse is working as\n")
-        r.write("  intended. SuperTranscripts should be longer than individual isoforms\n")
-        r.write("  because they merge overlapping exonic regions into a single\n")
-        r.write("  non-redundant sequence per gene.\n\n")
         r.write(f"  {'Stage':<30} {'N':>8} {'Mean':>10} {'Median':>10} "
                 f"{'Min':>8} {'Max':>10}\n")
         for label, lens in [("Trinity transcripts", trinity_lengths),
-                            ("After MMseqs2 dedup", deduped_lengths),
                             ("SuperTranscripts", st_lengths)]:
             if lens:
                 r.write(f"  {label:<30} {len(lens):>8,} {statistics.mean(lens):>10,.1f} "
@@ -279,11 +268,6 @@ def main():
         # --- Section 4: Protein/ORF stats ---
         r.write("4. PREDICTED PROTEINS\n")
         r.write("-" * 40 + "\n")
-        r.write("  WHY: A single representative protein per gene is needed for\n")
-        r.write("  functional annotation (BUSCO, SwissProt, Pfam) and comparative\n")
-        r.write("  analyses. TD2 predicts ORFs with homology support; the best ORF\n")
-        r.write("  per gene is selected by PSAURON coding-potential score (0-1,\n")
-        r.write("  neural-net-based), then by length as a tiebreaker.\n\n")
         r.write(f"  Total proteins:      {fmt(n_proteins)}\n")
         if orf_lengths:
             r.write(f"  Mean protein length: {statistics.mean(orf_lengths):,.1f} aa\n")
@@ -296,11 +280,6 @@ def main():
         # --- Section 5: Corset cluster sizes ---
         r.write("5. CORSET CLUSTER SIZES\n")
         r.write("-" * 40 + "\n")
-        r.write("  WHY: Corset uses Salmon equivalence classes and hierarchical clustering\n")
-        r.write("  with condition-aware paralog splitting to group transcripts into genes.\n")
-        r.write("  Cluster size = 1 means the gene had a single transcript (no merging\n")
-        r.write("  needed); larger clusters indicate multi-isoform loci collapsed into\n")
-        r.write("  one gene.\n\n")
         if cluster_counts:
             r.write(f"  Total clusters (genes): {fmt(len(cluster_counts))}\n")
             r.write(f"  Mean transcripts/gene:  {statistics.mean(cluster_counts):.2f}\n")
@@ -314,12 +293,6 @@ def main():
         # --- Section 6: Expression summary ---
         r.write("6. EXPRESSION SUMMARY (mean TPM across samples)\n")
         r.write("-" * 40 + "\n")
-        r.write("  WHY: Quantifying the same reads against transcripts vs. genes shows\n")
-        r.write("  how much signal was split across redundant isoforms. Gene-level TPMs\n")
-        r.write("  should be higher on average because reads that were ambiguously\n")
-        r.write("  distributed across isoforms are now consolidated onto one gene.\n")
-        r.write("  Fewer zero-expression features at the gene level also indicates\n")
-        r.write("  reduced sparsity in the count matrix.\n\n")
         r.write(f"  {'Metric':<35} {'Transcript':>12} {'Gene':>12}\n")
         if init_mean_tpms and final_mean_tpms:
             r.write(f"  {'Samples quantified':<35} {n_samples_init:>12} "
@@ -347,24 +320,26 @@ def main():
         # --- Section 7: BUSCO ---
         r.write("7. BUSCO COMPLETENESS\n")
         r.write("-" * 40 + "\n")
-        r.write("  WHY: BUSCO measures how many conserved single-copy orthologs are\n")
-        r.write("  present in the final protein set. High completeness (>80%) confirms\n")
-        r.write("  that the thinning process did not discard real genes. Run in protein\n")
-        r.write(f"  mode against the one-protein-per-gene set ({species}).\n\n")
-        if busco_text:
-            for line in busco_text.splitlines():
+
+        r.write("  --- Trinity baseline (transcriptome mode) ---\n")
+        if busco_trinity_text:
+            for line in busco_trinity_text.splitlines():
                 r.write(f"  {line}\n")
         else:
-            r.write("  (BUSCO summary not available)\n")
+            r.write("  (BUSCO Trinity summary not available)\n")
+        r.write("\n")
+
+        r.write("  --- Final proteins (protein mode) ---\n")
+        if busco_final_text:
+            for line in busco_final_text.splitlines():
+                r.write(f"  {line}\n")
+        else:
+            r.write("  (BUSCO final summary not available)\n")
         r.write("\n")
 
         # --- Section 8: ID validation ---
         r.write("8. ID CONSISTENCY CHECK\n")
         r.write("-" * 40 + "\n")
-        r.write("  WHY: Downstream tools (tximport, DESeq2) need protein/gene IDs to\n")
-        r.write("  match between the .faa and the Salmon quant.sf. This sanity check\n")
-        r.write("  confirms that every protein ID appears in the gene-level quant,\n")
-        r.write("  catching naming mismatches early.\n\n")
         if id_val_text:
             for line in id_val_text.splitlines():
                 r.write(f"  {line}\n")

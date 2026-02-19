@@ -1,27 +1,26 @@
 /*
- * BUSCO v6 — assess completeness of the final protein set
+ * BUSCO v6 — transcriptome or protein completeness assessment
  */
 
-process BUSCO_QC {
-    label 'process_high'
-    tag "${species_label}"
+process BUSCO {
+    tag "${species_label}_${suffix}"
 
     input:
-    path(faa)
+    path(fasta)
     val(species_label)
+    val(suffix)
 
     output:
-    path("busco_final"),              emit: outdir
-    path("busco_final/short_summary*"), emit: summary
+    path("busco_${suffix}"),              emit: outdir
+    path("busco_${suffix}/short_summary*"), emit: summary
 
     script:
     def args = task.ext.args ?: ''
     """
     busco \\
-        -i ${faa} \\
+        -i ${fasta} \\
         ${args} \\
-        -m proteins \\
-        -o busco_final \\
+        -o busco_${suffix} \\
         -c ${task.cpus}
     """
 }

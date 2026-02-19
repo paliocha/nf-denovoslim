@@ -1,9 +1,8 @@
 /*
- * MMseqs2 nucleotide clustering — remove near-identical transcripts
+ * MMseqs2 nucleotide clustering (not used — kept for reference)
  */
 
 process MMSEQS2_CLUSTER_NT {
-    label 'process_medium'
     tag "${trinity_fasta.baseName}"
 
     input:

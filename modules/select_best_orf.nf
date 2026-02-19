@@ -1,9 +1,8 @@
 /*
- * SELECT_BEST_ORF — pick one protein per gene, output mapping file
+ * SELECT_BEST_ORF — one protein per gene, selected by PSAURON score
  */
 
 process SELECT_BEST_ORF {
-    label 'process_low'
     tag "${species_label}"
 
     input:
