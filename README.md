@@ -17,61 +17,13 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
 
 The **full, unfiltered Trinity assembly** goes directly into Salmon (with `--dumpEq`, no `--hardFilter`) so that multi-mapping signal across isoforms is preserved for Corset's hierarchical clustering. Deduplicating transcripts *before* Corset destroys this signal and produces mostly singleton clusters.
 
-## Pipeline DAG
+## Pipeline
 
-```
-                      (input reads)
-                             |
-                             v
-                    SORTMERNA_INDEX
-                    SORTMERNA (per sample)
-                             |
-                             v
-               filtered reads (non-rRNA) --------+------------------+
-                             |                   |                  |
-    trinity_assembly.fasta --+                   |                  |
-                             |                   |                  |
-                             v                   |                  |
-                    SALMON_INDEX_INITIAL          |                  |
-                    SALMON_QUANT_INITIAL          |                  |
-                     (per sample, --dumpEq)       |                  |
-                             |                   |                  |
-                             v                   |                  |
-                          CORSET                  |                  |
-                           LACE                   |                  |
-                             |                   |                  |
-                             v                   |                  |
-                    MMSEQS2_TAXONOMY              |                  |
-                (keep Streptophyta only)          |                  |
-                             |                   |                  |
-                             v                   |                  |
-                     DIAMOND_BLASTX              |                  |
-                    CORRECT_FRAMESHIFTS           |                  |
-                             |                   |                  |
-              +--------------+----------------+  |                  |
-              v                               v  |                  |
-        TD2_LONGORFS                    SALMON_INDEX_FINAL          |
-              |                               |                     |
-       +------+------+                        v                     |
-       v              v                 SALMON_QUANT_FINAL <--------+
-  MMSEQS2_SEARCH  MMSEQS2_SEARCH         (gene-level)
-   (SwissProt)      (Pfam)                    |
-       |              |                       v
-       v              v                 VALIDATE_IDS
-        TD2_PREDICT
-              |
-              v
-       SELECT_BEST_ORF -----> species.faa + best_orfs.gff3
-              |
-       +------+----------+
-       v                  v
-    BUSCO_QC          TRANSANNOT
-       |                  |
-       v                  v
-              THINNING_REPORT
-```
+<picture>
+  <img alt="nf-denovoslim pipeline metro map" src="docs/pipeline_metro.svg">
+</picture>
 
-Also run in parallel (no dependencies on main chain): **BUSCO_TRINITY** on the raw Trinity assembly.
+Three routes through the pipeline: **Assembly** (green) follows the main processing chain, **Quantification** (blue) forks after frameshift correction to re-quantify SuperTranscripts with Salmon, and **Annotation** (gold) branches from the best-ORF selection to TransAnnot. **BUSCO Trinity** runs independently on the raw Trinity assembly as a baseline QC check.
 
 | Step | Process | Tool |
 |------|---------|------|
