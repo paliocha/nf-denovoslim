@@ -17,7 +17,7 @@ process THINNING_REPORT {
     path(final_quant_dirs)
     path(busco_summary)
     path(id_validation)
-    path(sortmerna_logs)
+    path(sortmerna_logs, stageAs: 'sortmerna_??.log')
     val(species_label)
 
     output:
