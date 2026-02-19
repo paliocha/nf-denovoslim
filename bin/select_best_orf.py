@@ -27,12 +27,25 @@ td2_gff3    = sys.argv[3]
 species     = sys.argv[4]
 
 # --- Parse PSAURON scores ---
+# PSAURON writes preamble lines (command echo, summary stats) before the CSV.
+# Scan for the header line, then use DictReader for column-name stability.
 scores = {}
 with open(psauron_csv) as f:
-    reader = csv.reader(f)
-    next(reader)  # skip header
+    # Skip preamble until we find the CSV header
+    for line in f:
+        if line.startswith("description,"):
+            break
+    else:
+        print("ERROR: could not find 'description,' header in PSAURON CSV", file=sys.stderr)
+        sys.exit(1)
+    reader = csv.DictReader(f, fieldnames=line.strip().split(","))
     for row in reader:
-        scores[row[0]] = float(row[1])
+        orf_id = row["description"]
+        try:
+            scores[orf_id] = float(row["in-frame_score"])
+        except (ValueError, KeyError):
+            # Skip malformed rows (e.g. trailing blank lines)
+            continue
 
 # --- Group ORFs by parent SuperTranscript ---
 orfs_by_gene = defaultdict(list)
