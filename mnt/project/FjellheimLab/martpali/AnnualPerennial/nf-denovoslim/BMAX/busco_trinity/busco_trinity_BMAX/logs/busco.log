@@ -1,0 +1,102 @@
+2026-02-19 12:17:10 DEBUG:busco.run_BUSCO	Command line: /usr/local/bin/busco -i /mnt/project/FjellheimLab/martpali/AnnualPerennial/assemblies/BMAX-Trinity1/BMAX-Trinity.fasta -m transcriptome -l poales_odb12 -o /mnt/project/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/BMAX/busco_trinity/busco_trinity_BMAX -c 4 --download_path /mnt/project/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/busco_downloads
+2026-02-19 12:17:10 INFO:busco.run_BUSCO	***** Start a BUSCO v6.0.0 analysis, current time: 02/19/2026 12:17:10 *****
+2026-02-19 12:17:10 DEBUG:busco.ConfigManager	Getting config file
+2026-02-19 12:17:10 INFO:busco.ConfigManager	Configuring BUSCO with local environment
+2026-02-19 12:17:10 INFO:busco.BuscoConfig	Running transcriptome mode
+2026-02-19 12:17:11 INFO:busco.BuscoDownloadManager	Downloading information on latest versions of BUSCO data...
+2026-02-19 12:17:11 INFO:busco.BuscoDownloadManager	Download connection problem. Retrying in 10 seconds
+2026-02-19 12:17:21 INFO:busco.BuscoDownloadManager	Download connection problem. Retrying in 100 seconds
+2026-02-19 12:17:22 ERROR:busco.run_BUSCO	A signal was sent to kill the process. 
+BUSCO analysis failed !
+2026-02-19 12:17:22 DEBUG:busco.run_BUSCO	A signal was sent to kill the process. 
+BUSCO analysis failed !
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/urllib/request.py", line 1344, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+  File "/usr/local/lib/python3.12/http/client.py", line 1338, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+  File "/usr/local/lib/python3.12/http/client.py", line 1384, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+  File "/usr/local/lib/python3.12/http/client.py", line 1333, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "/usr/local/lib/python3.12/http/client.py", line 1093, in _send_output
+    self.send(msg)
+  File "/usr/local/lib/python3.12/http/client.py", line 1037, in send
+    self.connect()
+  File "/usr/local/lib/python3.12/http/client.py", line 1479, in connect
+    self.sock = self._context.wrap_socket(self.sock,
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/ssl.py", line 455, in wrap_socket
+    return self.sslsocket_class._create(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/ssl.py", line 1041, in _create
+    self.do_handshake()
+  File "/usr/local/lib/python3.12/ssl.py", line 1319, in do_handshake
+    self._sslobj.do_handshake()
+ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/busco/BuscoDownloadManager.py", line 87, in _obtain_versions_file
+    urllib.request.urlretrieve(remote_filepath, local_filepath)
+  File "/usr/local/lib/python3.12/urllib/request.py", line 240, in urlretrieve
+    with contextlib.closing(urlopen(url, data)) as fp:
+                            ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 515, in open
+    response = self._open(req, data)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 532, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 1392, in https_open
+    return self.do_open(http.client.HTTPSConnection, req,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 1347, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)>
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/busco/run_BUSCO.py", line 77, in run
+    self.load_config()
+  File "/usr/local/lib/python3.12/site-packages/busco/run_BUSCO.py", line 68, in load_config
+    self.config_manager.load_busco_config_main()
+  File "/usr/local/lib/python3.12/site-packages/busco/BuscoLogger.py", line 62, in wrapped_func
+    self.retval = func(*args, **kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/busco/ConfigManager.py", line 64, in load_busco_config_main
+    self.config_main.validate()
+  File "/usr/local/lib/python3.12/site-packages/busco/BuscoConfig.py", line 695, in validate
+    self._init_downloader()
+  File "/usr/local/lib/python3.12/site-packages/busco/BuscoConfig.py", line 466, in _init_downloader
+    self.downloader = BuscoDownloadManager(self)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/busco/BuscoDownloadManager.py", line 53, in __init__
+    self._obtain_versions_file()
+  File "/usr/local/lib/python3.12/site-packages/busco/BuscoLogger.py", line 62, in wrapped_func
+    self.retval = func(*args, **kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/busco/BuscoDownloadManager.py", line 112, in _obtain_versions_file
+    time.sleep(tsleep)
+KeyboardInterrupt
+2026-02-19 12:17:22 ERROR:busco.run_BUSCO	BUSCO analysis failed!
+2026-02-19 12:17:22 ERROR:busco.run_BUSCO	Check the logs, read the user guide (https://busco.ezlab.org/busco_userguide.html), and check the BUSCO issue board on https://gitlab.com/ezlab/busco/issues
+
+2026-02-19 12:17:22 INFO:busco.run_BUSCO	Thank you for using BUSCO! Anonymous usage data is gathered to improve the tool. You may opt out with --opt-out-run-stats.
+2026-02-19 12:17:22 DEBUG:urllib3.connectionpool	Starting new HTTPS connection (1): ipinfo.io:443
+2026-02-19 12:17:22 DEBUG:urllib3.connectionpool	Starting new HTTPS connection (1): ipinfo.io:443
+2026-02-19 12:17:22 DEBUG:urllib3.connectionpool	https://ipinfo.io:443 "GET /10.221.0.15/json HTTP/1.1" 200 None
+2026-02-19 12:17:22 DEBUG:urllib3.connectionpool	https://ipinfo.io:443 "GET /10.221.0.15/json HTTP/1.1" 200 None
+2026-02-19 12:17:22 DEBUG:urllib3.connectionpool	Starting new HTTPS connection (1): busco-data.ezlab.org:443
+2026-02-19 12:17:22 DEBUG:urllib3.connectionpool	Starting new HTTPS connection (1): busco-data.ezlab.org:443
+2026-02-19 12:17:22 DEBUG:urllib3.connectionpool	https://busco-data.ezlab.org:443 "POST /uploaddb HTTP/1.1" 200 64
+2026-02-19 12:17:22 DEBUG:urllib3.connectionpool	https://busco-data.ezlab.org:443 "POST /uploaddb HTTP/1.1" 200 64
+2026-02-19 12:17:22 DEBUG:busco.run_BUSCO	Data uploaded successfully.
