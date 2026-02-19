@@ -16,7 +16,9 @@
 
 include { SORTMERNA_INDEX                            } from './modules/sortmerna'
 include { SORTMERNA                                  } from './modules/sortmerna'
-include { MMSEQS2_CLUSTER_NT                         } from './modules/mmseqs2_cluster_nt'
+// MMseqs2 nucleotide dedup removed — full Trinity goes to Salmon→Corset→Lace
+// to preserve multi-mapping signal for proper gene clustering (see paper Methods).
+// include { MMSEQS2_CLUSTER_NT                         } from './modules/mmseqs2_cluster_nt'
 include { SALMON_INDEX as SALMON_INDEX_INITIAL       } from './modules/salmon_index'
 include { SALMON_INDEX as SALMON_INDEX_FINAL         } from './modules/salmon_index'
 include { SALMON_QUANT as SALMON_QUANT_INITIAL       } from './modules/salmon_quant'
@@ -27,8 +29,8 @@ include { MMSEQS2_TAXONOMY                            } from './modules/mmseqs2_
 include { DIAMOND_BLASTX                              } from './modules/frameshift_correction'
 include { CORRECT_FRAMESHIFTS                          } from './modules/frameshift_correction'
 include { TD2_LONGORFS                                               } from './modules/td2_longorfs'
-include { MMSEQS2_SEARCH_CHUNKED as MMSEQS2_SEARCH_CHUNKED_SWISSPROT } from './subworkflows/mmseqs2_search_chunked'
-include { MMSEQS2_SEARCH_CHUNKED as MMSEQS2_SEARCH_CHUNKED_PFAM      } from './subworkflows/mmseqs2_search_chunked'
+include { MMSEQS2_SEARCH as MMSEQS2_SEARCH_SWISSPROT                  } from './modules/mmseqs2_search'
+include { MMSEQS2_SEARCH as MMSEQS2_SEARCH_PFAM                       } from './modules/mmseqs2_search'
 include { TD2_PREDICT                                                } from './modules/td2_predict'
 include { SELECT_BEST_ORF                            } from './modules/select_best_orf'
 include { VALIDATE_IDS                               } from './modules/validate_ids'
@@ -134,16 +136,12 @@ workflow {
         }
 
     // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 1: MMseqs2 nucleotide clustering (97% identity dedup)        ║
+    // ║  STEP 1: Salmon initial index + quant (with --dumpEq for Corset)   ║
+    // ║  Index the FULL Trinity assembly so Corset sees all multi-mapping   ║
+    // ║  signal across isoforms — critical for proper gene clustering.      ║
     // ╚══════════════════════════════════════════════════════════════════════╝
 
-    MMSEQS2_CLUSTER_NT(ch_trinity)
-
-    // ╔══════════════════════════════════════════════════════════════════════╗
-    // ║  STEP 2-3: Salmon initial index + quant (with --dumpEq for Corset) ║
-    // ╚══════════════════════════════════════════════════════════════════════╝
-
-    SALMON_INDEX_INITIAL(MMSEQS2_CLUSTER_NT.out.rep_fasta)
+    SALMON_INDEX_INITIAL(ch_trinity)
 
     ch_reads_for_salmon = ch_filtered_reads
         .map { sample_id, condition, r1, r2 -> [ sample_id, r1, r2 ] }
@@ -181,7 +179,7 @@ workflow {
     // ╚══════════════════════════════════════════════════════════════════════╝
 
     LACE(
-        MMSEQS2_CLUSTER_NT.out.rep_fasta,
+        ch_trinity,
         CORSET.out.clust,
         params.species_label
     )
@@ -214,14 +212,15 @@ workflow {
     TD2_LONGORFS(CORRECT_FRAMESHIFTS.out.fasta, params.species_label)
 
     // Steps 7 & 8 run in parallel with chunking for 5-8× speedup
+    // Steps 7 & 8 run in parallel — single-process searches (DBs are small enough)
     // (DB paths passed as val — no staging of multi-GB DBs)
-    MMSEQS2_SEARCH_CHUNKED_SWISSPROT(
+    MMSEQS2_SEARCH_SWISSPROT(
         TD2_LONGORFS.out.longest_orfs_pep,
         params.mmseqs2_swissprot,
         'swissprot'
     )
 
-    MMSEQS2_SEARCH_CHUNKED_PFAM(
+    MMSEQS2_SEARCH_PFAM(
         TD2_LONGORFS.out.longest_orfs_pep,
         params.mmseqs2_pfam,
         'pfam'
@@ -230,8 +229,8 @@ workflow {
     // Step 9: TD2.Predict with combined homology hits
     TD2_PREDICT(
         CORRECT_FRAMESHIFTS.out.fasta,
-        MMSEQS2_SEARCH_CHUNKED_SWISSPROT.out.m8,
-        MMSEQS2_SEARCH_CHUNKED_PFAM.out.m8,
+        MMSEQS2_SEARCH_SWISSPROT.out.m8,
+        MMSEQS2_SEARCH_PFAM.out.m8,
         TD2_LONGORFS.out.td2_dir,
         params.species_label
     )
@@ -295,7 +294,7 @@ workflow {
 
     THINNING_REPORT(
         ch_trinity,
-        MMSEQS2_CLUSTER_NT.out.rep_fasta,
+        ch_trinity,   // no separate dedup step — full Trinity goes to Corset
         CORRECT_FRAMESHIFTS.out.fasta,
         CORSET.out.clust,
         SELECT_BEST_ORF.out.map,
