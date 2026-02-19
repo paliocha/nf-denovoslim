@@ -36,6 +36,7 @@ process TD2_PREDICT {
 
     TD2.Predict \\
         -t ${supertranscripts_fasta} \\
-        --retain-mmseqs-hits combined_alnRes.m8
+        --retain-mmseqs-hits combined_alnRes.m8 \\
+        -v
     """
 }

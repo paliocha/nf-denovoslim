@@ -209,6 +209,12 @@ Compute nodes no longer need manual cleanup — `$TMPDIR` is auto-cleaned per jo
 - Custom containers (TD2, Lace) are local `.sif` files, not pulled from registries
 - Container bind mounts include `-B /work:/work` so scratch dirs are accessible inside Apptainer
 
+### Site sbatch wrapper & BASH_ENV
+
+Orion has a site sbatch wrapper (`/cluster/software/slurm/site/bin/sbatch`) that injects `BASH_ENV` so SLURM env files are sourced. **This causes infinite recursion for nested sbatch calls** (e.g., Nextflow head job → child tasks): the wrapper sets `ORIG_BASH_ENV="${BASH_ENV}"`, and since `BASH_ENV` is already set in the head job environment, the BASH_ENV script chain-sources itself endlessly → segfault.
+
+**Workaround:** All `run_*.sh` scripts include `unset BASH_ENV` before `nextflow run`. This ensures child sbatch calls get `ORIG_BASH_ENV=""`, breaking the recursion. If the admin fixes the wrapper (e.g., adding a recursion guard), this workaround can be removed.
+
 ## MMseqs2 Taxonomy Internals
 
 The `MMSEQS2_TAXONOMY` process runs `mmseqs taxonomy` against the UniRef90 database (~90M representative sequences, ~25 GB on disk). UniRef90 replaced the full TrEMBL database (~252M sequences) to eliminate target-splitting and dramatically reduce runtime.
@@ -224,7 +230,7 @@ M = (7 * N * L + 8 * a^k) bytes
 ```
 
 For UniRef90 (~90M seqs, avg length ~330): M ≈ 208 GB + 10 GB = ~218 GB.
-With `--split-memory-limit` at 85% of task memory, 400 GB allocation → 340 GB limit → no splits.
+With `--split-memory-limit` at 85% of task memory, 580 GB allocation → 493 GB limit → no splits.
 
 ### Two-phase taxonomy workflow
 

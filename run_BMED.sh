@@ -16,6 +16,12 @@ module load Java
 module load Anaconda3
 module load singularity
 
+# Prevent infinite BASH_ENV recursion: the site sbatch wrapper sets
+# ORIG_BASH_ENV="${BASH_ENV}", so child sbatch calls would chain-source
+# the same script endlessly (→ segfault). Unsetting BASH_ENV here makes
+# the wrapper set ORIG_BASH_ENV="", breaking the loop.
+unset BASH_ENV
+
 PIPELINE_DIR=$HOME/AnnualPerennial/nf-denovoslim
 LAUNCH_DIR=$HOME/AnnualPerennial/nf-denovoslim/runs/BMED
 mkdir -p $LAUNCH_DIR
