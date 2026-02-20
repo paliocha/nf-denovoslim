@@ -9,7 +9,7 @@ on:
 jobs:
   lint:
     name: Nextflow lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -22,7 +22,7 @@ jobs:
 
   corset-build:
     name: Corset C/C++ build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
