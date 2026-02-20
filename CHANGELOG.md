@@ -10,6 +10,8 @@ All notable changes to nf-denovoslim are documented in this file.
     discards reverse hits); halves translated query volume
   - `--iterate --sensitive`: fast pre-screen at default sensitivity, only
     unmatched queries proceed to full sensitive search
+  - `-g 512`: cap gapped extensions to top 512 ungapped-score targets;
+    trims redundant Smith-Waterman work beyond `--top 1` best hit
   - `-b 4 -c 1`: larger reference blocks (34 → ~17) and single index pass
     (4 → 1); reduces per-iteration overhead by ~8×
   - `--tmpdir .`: ensure temp files go to node-local SSD
