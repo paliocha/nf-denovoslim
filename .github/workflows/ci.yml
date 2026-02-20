@@ -17,8 +17,21 @@ jobs:
         with:
           version: '24.10.0'
 
-      - name: Check Nextflow syntax
-        run: nextflow run main.nf -preview
+      - name: Validate config
+        run: nextflow config .
+
+      - name: Check syntax (dry-run)
+        run: |
+          nextflow run main.nf -preview \
+            --trinity_fasta dummy.fa \
+            --samplesheet dummy.csv \
+            --mmseqs2_swissprot /dummy \
+            --mmseqs2_pfam /dummy \
+            --mmseqs2_eggnog /dummy \
+            --mmseqs2_taxonomy_db /dummy \
+            --diamond_db /dummy \
+            --eggnog_annotations /dummy \
+            --busco_lineage poales_odb12
 
   corset-build:
     name: Corset C/C++ build
@@ -33,15 +46,24 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential autoconf \
-            libhts-dev \
+            build-essential autoconf wget \
             zlib1g-dev libbz2-dev liblzma-dev \
-            libcurl4-openssl-dev libdeflate-dev
+            libcurl4-openssl-dev libdeflate-dev libssl-dev
+
+      - name: Build htslib 1.23
+        run: |
+          wget -q https://github.com/samtools/htslib/releases/download/1.23/htslib-1.23.tar.bz2
+          tar xjf htslib-1.23.tar.bz2
+          cd htslib-1.23
+          ./configure --prefix=/usr/local --enable-libcurl
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
 
       - name: Configure
         run: |
-          autoconf
-          ./configure
+          autoconf configure.in > configure && chmod +x configure
+          ./configure --with-htslib=/usr/local
 
       - name: Build
         run: make -j$(nproc)
