@@ -1,17 +1,17 @@
 #!/bin/bash
-#SBATCH --job-name=corset_omp_FPRA
+#SBATCH --job-name=corset_FPRA
 #SBATCH --partition=orion
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=64G
 #SBATCH --time=12:00:00
-#SBATCH --output=corset_omp_FPRA_%j.out
-#SBATCH --error=corset_omp_FPRA_%j.err
+#SBATCH --output=corset_FPRA_%j.out
+#SBATCH --error=corset_FPRA_%j.err
 set -euo pipefail
 
 # ── Paths ────────────────────────────────────────────────────────────
-SIF="/mnt/users/martpali/AnnualPerennial/nf-denovoslim/containers/corset_omp/corset_omp_1.10.sif"
+SIF="/mnt/users/martpali/AnnualPerennial/nf-denovoslim/containers/corset/corset_1.10.sif"
 WORK="/mnt/project/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/FPRA/work"
-OUTDIR="$TMPDIR/corset_omp_test"
+OUTDIR="$TMPDIR/corset_test"
 mkdir -p "$OUTDIR"
 cd "$OUTDIR"
 
@@ -109,7 +109,7 @@ SAMPLE_GROUPS+=",T5_L,T5_L,T5_L,T5_L,T5_R,T5_R,T5_R,T5_R"
 NAMES=$(IFS=,; echo "${SAMPLES[*]}")
 
 # ── Run corset-omp ───────────────────────────────────────────────────
-echo "=== Running corset-omp with ${SLURM_CPUS_PER_TASK} threads ==="
+echo "=== Running corset with ${SLURM_CPUS_PER_TASK} threads ==="
 echo "Start: $(date '+%Y-%m-%d %H:%M:%S')"
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
@@ -123,15 +123,15 @@ apptainer exec \
         -i salmon_eq_classes \
         -g "$SAMPLE_GROUPS" \
         -n "$NAMES" \
-        -p corset_omp \
+        -p corset_fpra \
         "${EQ_ARGS[@]}"
 
 echo "End:   $(date '+%Y-%m-%d %H:%M:%S')"
 
 # ── Copy results back to persistent storage ──────────────────────────
-RESULT_DIR="/mnt/users/martpali/AnnualPerennial/nf-denovoslim/test_corset_omp_results"
+RESULT_DIR="/mnt/users/martpali/AnnualPerennial/nf-denovoslim/test_corset_results"
 mkdir -p "$RESULT_DIR"
-cp -v corset_omp-clusters.txt corset_omp-counts.txt "$RESULT_DIR/"
+cp -v corset_fpra-clusters.txt corset_fpra-counts.txt "$RESULT_DIR/"
 
 # ── Compare with original if available ───────────────────────────────
 ORIG_CLUSTERS="$WORK/ae/4e0283314e6241eff5bfed7d57f516/corset-clusters.txt"
@@ -139,16 +139,16 @@ if [[ -f "$ORIG_CLUSTERS" ]]; then
   echo ""
   echo "=== Comparison with original corset output ==="
   echo "Original clusters: $(wc -l < "$ORIG_CLUSTERS")"
-  echo "OMP clusters:      $(wc -l < corset_omp-clusters.txt)"
+  echo "New clusters:      $(wc -l < corset_fpra-clusters.txt)"
   echo ""
   # Check if cluster assignments match (column 2)
-  diff <(sort "$ORIG_CLUSTERS") <(sort corset_omp-clusters.txt) > /dev/null 2>&1 \
+  diff <(sort "$ORIG_CLUSTERS") <(sort corset_fpra-clusters.txt) > /dev/null 2>&1 \
     && echo "RESULT: Cluster assignments IDENTICAL" \
     || echo "RESULT: Cluster assignments DIFFER (expected — different hash seeding)"
   echo ""
   # Count unique clusters
   echo "Original unique clusters: $(cut -f2 "$ORIG_CLUSTERS" | sort -u | wc -l)"
-  echo "OMP unique clusters:      $(cut -f2 corset_omp-clusters.txt | sort -u | wc -l)"
+  echo "New unique clusters:      $(cut -f2 corset_fpra-clusters.txt | sort -u | wc -l)"
 fi
 
 echo ""
