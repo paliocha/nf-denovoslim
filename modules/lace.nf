@@ -1,5 +1,5 @@
 /*
- * Lace — build one SuperTranscript per gene from Corset clusters
+ * Lace 2.0 — build one SuperTranscript per gene from Corset clusters
  */
 
 process LACE {
@@ -15,7 +15,6 @@ process LACE {
 
     script:
     """
-    export MPLCONFIGDIR=\$(mktemp -d)
     export PYTHONUNBUFFERED=1
 
     Lace \\
