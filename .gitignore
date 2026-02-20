@@ -9,8 +9,10 @@ singularity_cache/
 
 # SLURM output
 *.out
+*.err
 
 # Container images (large binaries)
+containers/
 *.sif
 !containers/**/*.sif
 *.tar
@@ -23,3 +25,6 @@ THREADING_ANALYSIS.md
 IMPROVE_PLAN.md
 nph71009-sup-0001-figures1-s8-tables1-s3.pdf
 docs/
+test_corset_*
+test_corset_omp.sh
+LACE_IMPROVE_PLAN.md
