@@ -3,7 +3,7 @@ From: ubuntu:24.04
 
 %files
     # Copy the corset source tree into the build
-    /mnt/users/martpali/AnnualPerennial/corset-omp /opt/corset
+    /mnt/users/martpali/AnnualPerennial/Corset /opt/corset
 
 %post
     export DEBIAN_FRONTEND=noninteractive
@@ -61,7 +61,10 @@ From: ubuntu:24.04
     Corset fork with OpenMP parallelism for the hierarchical clustering step.
     Ported from legacy samtools 0.x API to htslib 1.23.
 
-    New option:  -t <int>   Number of threads (default: 1)
+    New options:
+      -t <int>       Number of threads (default: OMP_NUM_THREADS)
+      --version, -v  Print version and exit
+      --help, -h     Print usage and exit
 
     Usage:  corset -t 16 -i salmon_eq_classes -g group1,group1,group2,group2 \
                   -p my_prefix eq_class_1.sf eq_class_2.sf ...
