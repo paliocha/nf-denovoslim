@@ -12,6 +12,7 @@ singularity_cache/
 
 # Container images (large binaries)
 *.sif
+!containers/**/*.sif
 *.tar
 
 # Samplesheets (contain local paths)

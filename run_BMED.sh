@@ -20,7 +20,7 @@ module load singularity
 # ORIG_BASH_ENV="${BASH_ENV}", so child sbatch calls would chain-source
 # the same script endlessly (→ segfault). Unsetting BASH_ENV here makes
 # the wrapper set ORIG_BASH_ENV="", breaking the loop.
-unset BASH_ENV
+# unset BASH_ENV
 
 PIPELINE_DIR=$HOME/AnnualPerennial/nf-denovoslim
 LAUNCH_DIR=$HOME/AnnualPerennial/nf-denovoslim/runs/BMED

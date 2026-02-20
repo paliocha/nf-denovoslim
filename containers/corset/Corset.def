@@ -1,0 +1,67 @@
+Bootstrap: docker
+From: ubuntu:24.04
+
+%files
+    # Copy the corset source tree into the build
+    /mnt/users/martpali/AnnualPerennial/corset-omp /opt/corset
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        autoconf \
+        wget \
+        ca-certificates \
+        zlib1g-dev \
+        libbz2-dev \
+        liblzma-dev \
+        libcurl4-openssl-dev \
+        libdeflate-dev \
+        libssl-dev \
+        libgomp1 \
+        && rm -rf /var/lib/apt/lists/*
+
+    # ---------- build htslib 1.23 from source ----------
+    cd /tmp
+    wget -q https://github.com/samtools/htslib/releases/download/1.23/htslib-1.23.tar.bz2
+    tar xjf htslib-1.23.tar.bz2
+    cd htslib-1.23
+    ./configure --prefix=/usr/local --enable-libcurl
+    make -j$(nproc)
+    make install
+    ldconfig
+    cd /tmp && rm -rf htslib-1.23*
+
+    # ---------- build corset ----------
+    cd /opt/corset
+    autoconf configure.in > configure && chmod +x configure
+    ./configure --with-htslib=/usr/local
+    make clean
+    make -j$(nproc)
+    make install prefix=/usr/local
+
+    # Clean build artifacts only (keep all system packages for runtime libs)
+    cd /opt/corset && make clean || true
+    rm -rf /tmp/htslib-* /var/lib/apt/lists/*
+
+%environment
+    export PATH="/usr/local/bin:${PATH}"
+    export LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
+
+%runscript
+    exec corset "$@"
+
+%labels
+    Author Martin Paliocha
+    Version 1.10.0
+    Description Corset 1.10.0 with OpenMP-parallelised hierarchical clustering and modern htslib 1.23
+
+%help
+    Corset fork with OpenMP parallelism for the hierarchical clustering step.
+    Ported from legacy samtools 0.x API to htslib 1.23.
+
+    New option:  -t <int>   Number of threads (default: 1)
+
+    Usage:  corset -t 16 -i salmon_eq_classes -g group1,group1,group2,group2 \
+                  -p my_prefix eq_class_1.sf eq_class_2.sf ...

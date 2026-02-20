@@ -27,6 +27,8 @@ process CORSET {
         fi
     done
 
+    export OMP_NUM_THREADS=${task.cpus}
+
     corset \\
         -i salmon_eq_classes \\
         -g ${groups} \\
