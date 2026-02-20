@@ -33,6 +33,11 @@ Three routes through the pipeline: **Assembly** (green) follows the main process
 | 3 | Build SuperTranscripts | [Lace 2.0.0](https://github.com/paliocha/Lace) |
 | 4 | Taxonomy filter (keep Streptophyta) | MMseqs2 taxonomy |
 | 5 | Frameshift correction | Diamond blastx 2.1.22 |
+
+> **Note:** An additional `~1.2×` speedup is possible by adding `-g 256` to the
+> Diamond command (caps gapped extensions per query to the top 256 ungapped-score
+> targets). This reduces the "Computing alignments" phase but slightly increases
+> peak memory. Not yet enabled — validate on a test run before applying.
 | 6 | ORF prediction with homology support | TD2 + MMseqs2 (SwissProt, Pfam) |
 | 7 | Best ORF selection (PSAURON FDR) | Python/BioPython |
 | 8 | Gene-level quantification | Salmon 1.10.3 |

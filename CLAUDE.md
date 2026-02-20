@@ -155,3 +155,11 @@ Orion's site sbatch wrapper injects `BASH_ENV` → causes infinite recursion for
 4. **Sample naming** — `{SPECIES}{ID}_{Timepoint}_{Tissue}`. Non-standard names need explicit `condition` column in samplesheet
 5. **Frameshift correction uses two containers** — Diamond (blastx) then BioPython (correction script)
 6. **No dedup before Corset** — the pipeline deliberately skips nucleotide deduplication; deduping before Corset destroys multi-mapping signal and produces singleton clusters
+7. **DIAMOND `-g 256` not yet applied** — adding `-g 256` (global ranking: cap
+   Smith-Waterman extensions to top 256 ungapped-score targets per query) would
+   reduce the "Computing alignments" phase (~19 % of runtime) by limiting wasted
+   gapped extensions beyond the `--top 1` best hit. Expected ~1.2× additional
+   speedup. Omitted for now because it slightly increases peak memory and has not
+   been validated against the current output. To enable: add `-g 256` to the
+   `diamond blastx` command in `modules/frameshift_correction.nf` and verify
+   identical hit counts on a test run.
