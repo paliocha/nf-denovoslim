@@ -56,4 +56,4 @@ jobs:
         run: make -j$(nproc)
 
       - name: Verify binary
-        run: ./corset --version || true
+        run: ./corset --version
