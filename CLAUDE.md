@@ -77,7 +77,6 @@ Trinity.fasta + Reads
 
 - `main.nf` — Workflow logic, channel wiring, input validation
 - `modules/*.nf` — One process per file
-- `subworkflows/*.nf` — Chunked split→process→merge (kept for future eggNOG use, not in main flow)
 - `conf/base.config` — Per-process CPU/memory/time via `withName:`
 - `conf/orion.config` — Orion HPC site config (DB paths, SLURM, bind mounts, group quota)
 - `nextflow.config` — Params, container assignments, profiles

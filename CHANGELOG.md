@@ -5,6 +5,14 @@ All notable changes to nf-denovoslim are documented in this file.
 ## [Unreleased]
 
 ### Changed
+- **Lace 2.0.0** — upgraded from patched v1.14.1 to complete rewrite
+  ([paliocha/Lace](https://github.com/paliocha/Lace)) with:
+  - minimap2 replaces BLAT (no licence restrictions)
+  - Block-level directed graph replaces coloured de Bruijn graph
+  - ProcessPoolExecutor parallelism (replaces GNU Parallel)
+  - Python 3.12+ (tested on 3.12, 3.13 and 3.14)
+  - **211× speedup** on BMAX dataset (1.17 M transcripts):
+    v1.14.1 5 h 32 min → v2.0.0 94.5 s; identical cluster count
 - **Corset 1.10** — upgraded from stock Corset 1.09 to OpenMP-parallelised
   fork ([paliocha/Corset](https://github.com/paliocha/Corset)) with:
   - Adjacency-list merge (O(degree) instead of O(n) per merge step)

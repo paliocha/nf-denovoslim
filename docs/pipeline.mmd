@@ -1,0 +1,77 @@
+%%metro title: nf-denovoslim
+%%metro style: light
+%%metro line: main | Assembly | #2db572
+%%metro line: quant | Quantification | #457b9d
+%%metro line: annot | Annotation | #f5c542
+
+graph LR
+    subgraph preprocess [Pre-processing]
+        _input
+        sortmerna_idx[SortMeRNA Index]
+        sortmerna[SortMeRNA]
+        _input -->|main,quant| sortmerna_idx
+        sortmerna_idx -->|main,quant| sortmerna
+    end
+
+    subgraph clustering [Transcript Clustering]
+        salmon_idx[Salmon Index]
+        salmon_quant[Salmon Quant]
+        corset[Corset]
+        lace[Lace]
+        salmon_idx -->|main,quant| salmon_quant
+        salmon_quant -->|main,quant| corset
+        corset -->|main,quant| lace
+    end
+
+    subgraph filtering [Taxonomy & Correction]
+        taxonomy[MMseqs2 Taxonomy]
+        diamond[Diamond BLASTX]
+        frameshifts[Correct Frameshifts]
+        taxonomy -->|main| diamond
+        diamond -->|main| frameshifts
+    end
+
+    subgraph orf_pred [ORF Prediction]
+        td2_long[TD2 LongOrfs]
+        swiss[SwissProt Search]
+        pfam[Pfam Search]
+        td2_predict[TD2 Predict]
+        select_best[Select Best ORF]
+        td2_long -->|main| swiss
+        td2_long -->|main| pfam
+        swiss -->|main| td2_predict
+        pfam -->|main| td2_predict
+        td2_predict -->|main,annot| select_best
+    end
+
+    subgraph gene_quant [Gene-level Quantification]
+        salmon_idx2[Salmon Index]
+        salmon_quant2[Salmon Quant]
+        validate[Validate IDs]
+        salmon_idx2 -->|quant| salmon_quant2
+        salmon_quant2 -->|quant| validate
+    end
+
+    subgraph qc_annot [QC & Annotation]
+        busco_trin[BUSCO Trinity]
+        busco_qc[BUSCO Proteins]
+        transannot[TransAnnot]
+    end
+
+    subgraph reporting [Reporting]
+        report[Thinning Report]
+    end
+
+    %% Inter-section edges
+    sortmerna -->|main| salmon_idx
+    sortmerna -->|quant| salmon_idx
+    lace -->|main| taxonomy
+    lace -->|quant| salmon_idx2
+    frameshifts -->|main| td2_long
+    _input -->|main| busco_trin
+    select_best -->|main| busco_qc
+    select_best -->|annot| transannot
+    busco_trin -->|main| report
+    busco_qc -->|main| report
+    transannot -->|annot| report
+    validate -->|quant| report

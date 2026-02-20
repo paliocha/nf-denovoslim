@@ -30,7 +30,7 @@ Three routes through the pipeline: **Assembly** (green) follows the main process
 | 0 | rRNA filtering | SortMeRNA 4.3.7 |
 | 1 | Initial quantification (full Trinity, `--dumpEq`) | Salmon 1.10.3 |
 | 2 | Transcript-to-gene clustering | Corset 1.10 ([paliocha/Corset](https://github.com/paliocha/Corset)) |
-| 3 | Build SuperTranscripts | Lace 1.14.1 |
+| 3 | Build SuperTranscripts | [Lace 2.0.0](https://github.com/paliocha/Lace) |
 | 4 | Taxonomy filter (keep Streptophyta) | MMseqs2 taxonomy |
 | 5 | Frameshift correction | Diamond blastx 2.1.22 |
 | 6 | ORF prediction with homology support | TD2 + MMseqs2 (SwissProt, Pfam) |
@@ -48,7 +48,7 @@ Three routes through the pipeline: **Assembly** (green) follows the main process
 - Pre-built MMseqs2 databases: SwissProt, Pfam, eggNOG7, UniRef90 taxonomy
 - Diamond database: UniRef90 (for frameshift correction)
 - eggNOG annotation TSV (for TransAnnot)
-- Local containers: `containers/td2/td2_1.0.8.sif`, `containers/lace/lace_1.14.1_patched.sif`
+- Local containers: `containers/td2/td2_1.0.8.sif`, `containers/lace/lace_2.0.sif`
 
 ## Usage
 
@@ -144,9 +144,10 @@ docker save td2:1.0.8 -o td2.tar
 apptainer build containers/td2/td2_1.0.8.sif docker-archive://td2.tar
 ```
 
-**Lace** (patches for NetworkX 3.x + matplotlib <3.6):
+**Lace** — download pre-built container from [paliocha/Lace releases](https://github.com/paliocha/Lace/releases):
 ```bash
-cd containers/lace && ./build.sh
+wget -O containers/lace/lace_2.0.sif \
+  https://github.com/paliocha/Lace/releases/download/v2.0.0/lace_2.0.sif
 ```
 
 ## Output
