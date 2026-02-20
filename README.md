@@ -29,7 +29,7 @@ Three routes through the pipeline: **Assembly** (green) follows the main process
 |------|---------|------|
 | 0 | rRNA filtering | SortMeRNA 4.3.7 |
 | 1 | Initial quantification (full Trinity, `--dumpEq`) | Salmon 1.10.3 |
-| 2 | Transcript-to-gene clustering | Corset 1.09 |
+| 2 | Transcript-to-gene clustering | Corset 1.10 ([paliocha/Corset](https://github.com/paliocha/Corset)) |
 | 3 | Build SuperTranscripts | Lace 1.14.1 |
 | 4 | Taxonomy filter (keep Streptophyta) | MMseqs2 taxonomy |
 | 5 | Frameshift correction | Diamond blastx 2.1.22 |

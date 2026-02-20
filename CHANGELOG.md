@@ -12,8 +12,10 @@ All notable changes to nf-denovoslim are documented in this file.
   - `FlatDistMap` open-addressing hash map (replaces `std::unordered_map`)
   - Early-out per-sample distance computation
   - SSE2 block intersection in `get_dist()`
-  - **270× speedup** on FPRA dataset (40 samples, 1.5 M transcripts):
-    v1.09 ~16 h → v1.10 3 min 21 s; 95.3 % identical cluster membership
+  - **270× speedup** on FPRA dataset (40 samples, 793 K transcripts):
+    v1.09 11 h 11 min → v1.10 3 min 21 s; 95.3 % identical cluster membership
+  - **55× speedup** on BMAX dataset (40 samples, 460 K transcripts):
+    v1.09 2 h 34 min → v1.10 2 min 47 s; 95.5 % identical cluster membership
 - CORSET process default raised to 32 CPUs / 128 GB, `OMP_NUM_THREADS`
   exported automatically from `task.cpus`
 - Container renamed from `corset_omp` to `corset`
