@@ -1,0 +1,73 @@
+# Changelog
+
+All notable changes to nf-denovoslim are documented in this file.
+
+## [Unreleased]
+
+### Changed
+- **Corset 1.10** — upgraded from stock Corset 1.09 to OpenMP-parallelised
+  fork ([paliocha/Corset](https://github.com/paliocha/Corset)) with:
+  - Adjacency-list merge (O(degree) instead of O(n) per merge step)
+  - Parallel distance recomputation (`#pragma omp parallel for`)
+  - `FlatDistMap` open-addressing hash map (replaces `std::unordered_map`)
+  - Early-out per-sample distance computation
+  - SSE2 block intersection in `get_dist()`
+  - **270× speedup** on FPRA dataset (40 samples, 1.5 M transcripts):
+    v1.09 ~16 h → v1.10 3 min 21 s; 95.3 % identical cluster membership
+- CORSET process default raised to 32 CPUs / 128 GB, `OMP_NUM_THREADS`
+  exported automatically from `task.cpus`
+- Container renamed from `corset_omp` to `corset`
+- Container SIF tracked via Git LFS
+
+### Fixed
+- README clarified that the full unfiltered Trinity assembly must go into
+  Salmon to preserve multi-mapping signal for Corset
+- `maxForks` adjustments in base.config
+
+## [0.3.0] — 2025-12-01
+
+### Added
+- BUSCO Trinity assessment (transcriptome mode) running in parallel with
+  the main pipeline for baseline QC
+- TransAnnot 4.0.0 functional annotation (SwissProt + Pfam + eggNOG)
+- Thinning report summarising transcript counts at each pipeline stage
+
+### Changed
+- Taxonomy filtering switched from TrEMBL to UniRef90 (`--filter_taxon 35493`)
+- Lace runs on node-local SSD to avoid NFS I/O bottleneck from per-cluster
+  FASTA files
+- TD2 updated to v1.0.8
+
+### Fixed
+- Lace container patched for NetworkX 3.x (`.node` → `.nodes`) and
+  matplotlib < 3.6 pinning
+- Diamond container lacked Python 3 — split into Diamond + Python processes
+- Channel join bug dropping 39/40 samples (`9e0f376`)
+- `bc` command not found in MMSEQS2_TAXONOMY
+
+## [0.2.0] — 2025-09-01
+
+### Added
+- Frameshift correction via Diamond blastx + Python post-processing
+- MMseqs2 taxonomy filtering (keep Streptophyta)
+- Chunked subworkflows for frameshift correction and MMseqs2 search/taxonomy
+
+### Changed
+- Resource allocations optimised: escalating memory retries, `--split-memory-limit`
+- SORTMERNA parallelisation increased (`maxForks 10 → 15`)
+
+### Fixed
+- DSL2 channel-fork bug starving SALMON_QUANT_INITIAL
+- Singleton process outputs converted to value channels
+- Scratch disabled globally (`.command.sh not found` on NFS)
+- CORSET scratch disabled (40 dirs overflow local disk)
+
+## [0.1.0] — 2025-06-01
+
+### Added
+- Initial pipeline: SortMeRNA → Salmon → Corset → Lace → TD2 → MMseqs2 →
+  Select Best ORF → Salmon (gene-level) → BUSCO
+- DSL2 modular structure with per-process containers
+- Orion HPC profile (`-profile apptainer,orion`)
+- Samplesheet-driven input with automatic condition extraction
+- tximport-compatible Salmon quantification output
