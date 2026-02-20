@@ -5,6 +5,15 @@ All notable changes to nf-denovoslim are documented in this file.
 ## [Unreleased]
 
 ### Changed
+- **DIAMOND blastx optimised** — expected ~4–6× speedup (5.8 h → ~1–1.5 h):
+  - `--strand plus`: skip reverse-strand translation (correction script already
+    discards reverse hits); halves translated query volume
+  - `--iterate --sensitive`: fast pre-screen at default sensitivity, only
+    unmatched queries proceed to full sensitive search
+  - `-b 4 -c 1`: larger reference blocks (34 → ~17) and single index pass
+    (4 → 1); reduces per-iteration overhead by ~8×
+  - `--tmpdir .`: ensure temp files go to node-local SSD
+  - Memory raised 32 → 48 GB to support larger block size
 - **Lace 2.0.0** — upgraded from patched v1.14.1 to complete rewrite
   ([paliocha/Lace](https://github.com/paliocha/Lace)) with:
   - minimap2 replaces BLAT (no licence restrictions)

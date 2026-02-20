@@ -24,13 +24,16 @@ process DIAMOND_BLASTX {
     # Run Diamond blastx with frameshift-tolerant alignment
     diamond blastx \\
         -F 15 \\
-        --sensitive \\
-        --top 1 \\
-        --min-score 50 \\
-        -d \$LOCAL_DB \\
-        -q ${supertranscripts_fasta} \\
-        --outfmt 6 qseqid qstart qend qlen qframe btop \\
-        -p ${task.cpus} \\
+        --iterate --sensitive \
+        --strand plus \
+        --top 1 \
+        --min-score 50 \
+        -b 4 -c 1 \
+        -d \$LOCAL_DB \
+        -q ${supertranscripts_fasta} \
+        --outfmt 6 qseqid qstart qend qlen qframe btop \
+        -p ${task.cpus} \
+        --tmpdir . \
         -o diamond_frameshift.tsv
     """
 }
