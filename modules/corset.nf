@@ -16,9 +16,9 @@ process CORSET {
 
     script:
     // Build -g (conditions) and -n (sample names) in the same order as sample_conditions
-    def groups = sample_conditions.collect { it.condition }.join(',')
-    def names  = sample_conditions.collect { it.sample_id }.join(',')
-    def eq_files = sample_conditions.collect { "${it.sample_id}_quant/aux_info/eq_classes.txt" }.join(' ')
+    def groups = sample_conditions.collect { sc -> sc.condition }.join(',')
+    def names  = sample_conditions.collect { sc -> sc.sample_id }.join(',')
+    def eq_files = sample_conditions.collect { sc -> "${sc.sample_id}_quant/aux_info/eq_classes.txt" }.join(' ')
     """
     # Decompress eq_classes if Salmon produced gzipped output
     for d in *_quant/aux_info; do

@@ -12,7 +12,7 @@ process SORTMERNA_INDEX {
     path("sortmerna_idx"), emit: index
 
     script:
-    def refs = fastas.collect { "--ref ${it}" }.join(' ')
+    def refs = fastas.collect { f -> "--ref ${f}" }.join(' ')
     """
     sortmerna \\
         ${refs} \\
@@ -38,7 +38,7 @@ process SORTMERNA {
     tuple val(sample_id), path("sortmerna.log"), emit: log
 
     script:
-    def refs = fastas.collect { "--ref ${it}" }.join(' ')
+    def refs = fastas.collect { f -> "--ref ${f}" }.join(' ')
     """
     # Symlink pre-built index so SortMeRNA finds it at ./idx/
     ln -s ${index}/idx idx

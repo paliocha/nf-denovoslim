@@ -30,18 +30,6 @@ include { BUSCO as BUSCO_QC                } from './modules/busco'
 include { TRANSANNOT                       } from './modules/transannot'
 include { THINNING_REPORT                  } from './modules/thinning_report'
 
-// --- Input validation ---
-
-if (!params.trinity_fasta)       { error "Please provide --trinity_fasta" }
-if (!params.samplesheet)         { error "Please provide --samplesheet" }
-if (!params.mmseqs2_swissprot)   { error "Please provide --mmseqs2_swissprot" }
-if (!params.mmseqs2_pfam)        { error "Please provide --mmseqs2_pfam" }
-if (!params.mmseqs2_eggnog)      { error "Please provide --mmseqs2_eggnog" }
-if (!params.mmseqs2_taxonomy_db) { error "Please provide --mmseqs2_taxonomy_db" }
-if (!params.diamond_db)          { error "Please provide --diamond_db" }
-if (!params.eggnog_annotations)  { error "Please provide --eggnog_annotations" }
-if (!params.busco_lineage)       { error "Please provide --busco_lineage" }
-
 // --- Helper: extract condition from sample name ---
 // e.g. BMAX56_T4_L -> T4_L
 
@@ -58,8 +46,19 @@ def extractCondition(sample_name) {
 
 workflow {
 
+    // --- Input validation ---
+    if (!params.trinity_fasta)       { error "Please provide --trinity_fasta" }
+    if (!params.samplesheet)         { error "Please provide --samplesheet" }
+    if (!params.mmseqs2_swissprot)   { error "Please provide --mmseqs2_swissprot" }
+    if (!params.mmseqs2_pfam)        { error "Please provide --mmseqs2_pfam" }
+    if (!params.mmseqs2_eggnog)      { error "Please provide --mmseqs2_eggnog" }
+    if (!params.mmseqs2_taxonomy_db) { error "Please provide --mmseqs2_taxonomy_db" }
+    if (!params.diamond_db)          { error "Please provide --diamond_db" }
+    if (!params.eggnog_annotations)  { error "Please provide --eggnog_annotations" }
+    if (!params.busco_lineage)       { error "Please provide --busco_lineage" }
+
     // Parse samplesheet: sample,fastq_1,fastq_2,strandedness[,condition]
-    ch_samplesheet = Channel
+    ch_samplesheet = channel
         .fromPath(params.samplesheet, checkIfExists: true)
         .splitCsv(header: true)
         .map { row ->
@@ -70,7 +69,7 @@ workflow {
             [ sample_id, condition, reads_1, reads_2 ]
         }
 
-    ch_trinity = Channel.fromPath(params.trinity_fasta, checkIfExists: true)
+    ch_trinity = channel.fromPath(params.trinity_fasta, checkIfExists: true)
 
     // BUSCO baseline on raw Trinity (transcriptome mode, no dependencies)
     BUSCO_TRINITY(ch_trinity, params.species_label, 'trinity')
@@ -78,11 +77,11 @@ workflow {
     // -- SortMeRNA: rRNA filtering --
 
     if (params.sortmerna_db_dir) {
-        ch_sortmerna_fastas = Channel
+        ch_sortmerna_fastas = channel
             .fromPath("${params.sortmerna_db_dir}/*.fasta")
             .collect()
     } else {
-        ch_sortmerna_fastas = Channel
+        ch_sortmerna_fastas = channel
             .fromList(params.sortmerna_db_urls)
             .map { url -> file(url) }
             .collect()
@@ -91,7 +90,7 @@ workflow {
     SORTMERNA_INDEX(ch_sortmerna_fastas)
 
     ch_reads_for_sortmerna = ch_samplesheet
-        .map { sample_id, condition, r1, r2 -> [ sample_id, r1, r2 ] }
+        .map { sample_id, _condition, r1, r2 -> [ sample_id, r1, r2 ] }
 
     SORTMERNA(
         ch_reads_for_sortmerna,
@@ -101,12 +100,12 @@ workflow {
 
     // Rejoin filtered reads with condition metadata (re-read samplesheet
     // to avoid consuming the queue channel used for reads)
-    ch_condition_map = Channel
+    ch_condition_map = channel
         .fromPath(params.samplesheet, checkIfExists: true)
         .splitCsv(header: true)
         .map { row -> [ row.sample, row.condition ?: extractCondition(row.sample) ] }
         .toList()
-        .map { list -> list.collectEntries { [ it[0], it[1] ] } }
+        .map { list -> list.collectEntries { entry -> [ entry[0], entry[1] ] } }
 
     ch_filtered_reads = SORTMERNA.out.reads
         .combine(ch_condition_map)
@@ -119,7 +118,7 @@ workflow {
     SALMON_INDEX_INITIAL(ch_trinity)
 
     ch_reads_for_salmon = ch_filtered_reads
-        .map { sample_id, condition, r1, r2 -> [ sample_id, r1, r2 ] }
+        .map { sample_id, _condition, r1, r2 -> [ sample_id, r1, r2 ] }
 
     SALMON_QUANT_INITIAL(
         ch_reads_for_salmon,
@@ -132,7 +131,7 @@ workflow {
     ch_all_quants = SALMON_QUANT_INITIAL.out.quant_dir.collect()
 
     // Build Corset -g/-n from a fresh samplesheet read (avoids queue-channel fork)
-    ch_sample_conditions = Channel
+    ch_sample_conditions = channel
         .fromPath(params.samplesheet, checkIfExists: true)
         .splitCsv(header: true)
         .map { row ->
@@ -148,7 +147,7 @@ workflow {
 
     LACE(ch_trinity, CORSET.out.clust, params.species_label)
 
-    // -- Taxonomy filter (keep Streptophyta) --
+    // -- Taxonomy filter (keep Viridiplantae) --
 
     MMSEQS2_TAXONOMY(
         LACE.out.fasta,
@@ -244,10 +243,14 @@ workflow {
         BUSCO_TRINITY.out.outdir,
         BUSCO_QC.out.outdir,
         VALIDATE_IDS.out.report,
-        SORTMERNA.out.log.map { sample_id, log -> log }.collect(),
+        SORTMERNA.out.log.map { _sample_id, logfile -> logfile }.collect(),
         MMSEQS2_TAXONOMY.out.breakdown,
         params.species_label
     )
+}
+
+output {
+    directory params.outdir
 }
 
 workflow.onComplete {

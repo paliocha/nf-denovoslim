@@ -24,9 +24,9 @@ process THINNING_REPORT {
     path("${species_label}_thinning_report.txt"), emit: report
 
     script:
-    def init_dirs  = initial_quant_dirs.collect { it.name }.join(',')
-    def final_dirs = final_quant_dirs.collect { it.name }.join(',')
-    def log_files  = sortmerna_logs.collect { it.name }.join(',')
+    def init_dirs  = initial_quant_dirs.collect { d -> d.name }.join(',')
+    def final_dirs = final_quant_dirs.collect { d -> d.name }.join(',')
+    def log_files  = sortmerna_logs.collect { f -> f.name }.join(',')
     """
     # Locate BUSCO short summaries
     BUSCO_TRINITY_FILE=\$(find ${busco_trinity} -name 'short_summary*' -type f | head -1)
