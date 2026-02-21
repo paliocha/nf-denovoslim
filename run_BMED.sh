@@ -11,6 +11,7 @@
 source ~/.bashrc
 eval "$(micromamba shell hook --shell bash)"
 micromamba activate Nextflow
+export NXF_SYNTAX_PARSER=v2
 
 module load Java
 module load Anaconda3
@@ -43,6 +44,10 @@ nextflow run $PIPELINE_DIR/main.nf \
     --mmseqs2_eggnog $PROJECTS/glowberry/transannot/db/eggNOG7_profiles \
     --mmseqs2_taxonomy_db $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/UniRef50taxdb \
     --diamond_db $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/uniref50.dmnd \
+    --eggnog_annotations $PROJECTS/glowberry/transannot/db/e7_as_e5_annotations.tsv \
+    --busco_lineage poales_odb12 \
     --filter_taxon 33090 \
+    --unix_group fjellheimlab \
+    --orion_exclude_nodes cn-37 \
     --outdir $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/BMED
 "

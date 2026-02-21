@@ -30,16 +30,52 @@ include { BUSCO as BUSCO_QC                } from './modules/busco'
 include { TRANSANNOT                       } from './modules/transannot'
 include { THINNING_REPORT                  } from './modules/thinning_report'
 
-// --- Helper: extract condition from sample name ---
-// e.g. BMAX56_T4_L -> T4_L
+// --- Typed pipeline parameters (Nextflow ≥25.10, strict syntax) ---
 
-def extractCondition(sample_name) {
-    def parts = sample_name.split('_')
-    if (parts.size() < 3) {
-        log.warn "Cannot extract condition from '${sample_name}' — using full name"
-        return sample_name
-    }
-    return "${parts[-2]}_${parts[-1]}"
+params {
+    // --- Input (required — no default) ---
+    trinity_fasta:       Path
+    samplesheet:         Path
+    species_label:       String  = 'species_X'
+
+    // --- SortMeRNA rRNA databases ---
+    sortmerna_db_urls:   List    = [
+        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/rfam-5.8s-database-id98.fasta',
+        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/rfam-5s-database-id98.fasta',
+        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-arc-16s-id95.fasta',
+        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-arc-23s-id98.fasta',
+        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-bac-16s-id90.fasta',
+        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-bac-23s-id98.fasta',
+        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-euk-18s-id95.fasta',
+        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-euk-28s-id98.fasta'
+    ]
+    sortmerna_db_dir:    String? = null   // Pre-downloaded dir; if null, downloads from URLs
+
+    // --- Databases (pre-built MMseqs2 — set via CLI or site config) ---
+    mmseqs2_swissprot:   Path
+    mmseqs2_pfam:        Path
+    mmseqs2_eggnog:      Path
+    mmseqs2_taxonomy_db: Path
+    eggnog_annotations:  Path
+    busco_lineage:       String              // e.g. 'poales_odb12', 'eudicots_odb12'
+    diamond_db:          Path
+
+    // --- Cluster (optional) ---
+    unix_group:          String? = null
+    orion_exclude_nodes: String? = null      // e.g. 'cn-37' (Orion-specific)
+
+    // --- Search params ---
+    mmseqs2_search_sens: Float   = 7.0
+
+    // --- Taxonomy filter (NCBI taxon ID — includes all descendants) ---
+    filter_taxon:        Integer = 33090     // Viridiplantae (green plants)
+
+    // --- TD2 params ---
+    td2_min_orf_length:  Integer = 90
+    td2_strand_specific: Boolean = true
+
+    // --- Output ---
+    outdir:              String  = './results'
 }
 
 // --- Main workflow ---
@@ -48,24 +84,13 @@ workflow {
 
     main:
 
-    // --- Input validation ---
-    if (!params.trinity_fasta)       { error "Please provide --trinity_fasta" }
-    if (!params.samplesheet)         { error "Please provide --samplesheet" }
-    if (!params.mmseqs2_swissprot)   { error "Please provide --mmseqs2_swissprot" }
-    if (!params.mmseqs2_pfam)        { error "Please provide --mmseqs2_pfam" }
-    if (!params.mmseqs2_eggnog)      { error "Please provide --mmseqs2_eggnog" }
-    if (!params.mmseqs2_taxonomy_db) { error "Please provide --mmseqs2_taxonomy_db" }
-    if (!params.diamond_db)          { error "Please provide --diamond_db" }
-    if (!params.eggnog_annotations)  { error "Please provide --eggnog_annotations" }
-    if (!params.busco_lineage)       { error "Please provide --busco_lineage" }
-
     // Parse samplesheet: sample,fastq_1,fastq_2,strandedness[,condition]
     ch_samplesheet = channel
         .fromPath(params.samplesheet, checkIfExists: true)
         .splitCsv(header: true)
         .map { row ->
             def sample_id = row.sample
-            def condition = row.condition ?: extractCondition(sample_id)
+            def condition = row.condition ?: Utils.extractCondition(sample_id)
             def reads_1   = file(row.fastq_1, checkIfExists: true)
             def reads_2   = file(row.fastq_2, checkIfExists: true)
             [ sample_id, condition, reads_1, reads_2 ]
@@ -105,14 +130,14 @@ workflow {
     ch_condition_map = channel
         .fromPath(params.samplesheet, checkIfExists: true)
         .splitCsv(header: true)
-        .map { row -> [ row.sample, row.condition ?: extractCondition(row.sample) ] }
+        .map { row -> [ row.sample, row.condition ?: Utils.extractCondition(row.sample) ] }
         .toList()
         .map { list -> list.collectEntries { entry -> [ entry[0], entry[1] ] } }
 
     ch_filtered_reads = SORTMERNA.out.reads
         .combine(ch_condition_map)
         .map { sample_id, r1, r2, cmap ->
-            [ sample_id, cmap[sample_id] ?: extractCondition(sample_id), r1, r2 ]
+            [ sample_id, cmap[sample_id] ?: Utils.extractCondition(sample_id), r1, r2 ]
         }
 
     // -- Salmon initial quant (full Trinity, --dumpEq for Corset) --
@@ -137,7 +162,7 @@ workflow {
         .fromPath(params.samplesheet, checkIfExists: true)
         .splitCsv(header: true)
         .map { row ->
-            [ sample_id: row.sample, condition: row.condition ?: extractCondition(row.sample) ]
+            [ sample_id: row.sample, condition: row.condition ?: Utils.extractCondition(row.sample) ]
         }
         .toSortedList { a, b ->
             a.condition <=> b.condition ?: a.sample_id <=> b.sample_id
@@ -271,6 +296,13 @@ workflow {
     busco_qc            = BUSCO_QC.out.outdir
     transannot          = TRANSANNOT.out.annotation
     thinning_report     = THINNING_REPORT.out.report
+
+    onComplete:
+    log.info ""
+    log.info "Pipeline completed: ${workflow.success ? 'SUCCESS' : 'FAILED'}"
+    log.info "Duration          : ${workflow.duration}"
+    log.info "Output dir        : ${params.outdir}"
+    log.info ""
 }
 
 // -- Workflow output definitions (Nextflow ≥25.10) --
@@ -296,12 +328,4 @@ output {
     busco_qc            { path 'qc' }
     transannot          { path 'transannot' }
     thinning_report     { path '.' }
-}
-
-workflow.onComplete {
-    log.info ""
-    log.info "Pipeline completed: ${workflow.success ? 'SUCCESS' : 'FAILED'}"
-    log.info "Duration          : ${workflow.duration}"
-    log.info "Output dir        : ${params.outdir}"
-    log.info ""
 }
