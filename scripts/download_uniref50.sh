@@ -31,8 +31,9 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PIPELINE_DIR="$(dirname "$SCRIPT_DIR")"
+# SLURM copies scripts to /var/tmp/slurmd, so BASH_SOURCE won't resolve
+# back to the original repo.  Use a hard-coded pipeline path instead.
+PIPELINE_DIR="/mnt/users/martpali/AnnualPerennial/nf-denovoslim"
 
 DB_DIR="/mnt/project/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db"
 TMP_DIR="$DB_DIR/tmp_uniref50"
