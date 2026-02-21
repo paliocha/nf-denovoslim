@@ -51,18 +51,34 @@ process MMSEQS2_TAXONOMY {
     # 6. Convert filtered DB back to FASTA
     mmseqs convert2fasta filteredDB supertranscripts_filtered.fasta
 
+    # 6b. Rescue sequences with no database hit (taxon ID 0 = unclassified).
+    #     Novel or species-specific plant genes lacking a UniRef90 match receive
+    #     taxon ID 0 and are NOT kept by filtertaxdb, so they must be appended
+    #     explicitly.  Contamination sequences (e.g. bacteria, fungi) will have
+    #     a real taxonomy assignment and are correctly excluded by step 4.
+    awk -F'\t' '\$2 == 0 { print \$1 }' taxRes_lca.tsv > no_hit_ids.txt
+    if [ -s no_hit_ids.txt ]; then
+        awk 'NR==FNR { ids[\$1]=1; next }
+             /^>/ { p = (substr(\$1,2) in ids) }
+             p' no_hit_ids.txt ${supertranscripts_fasta} >> supertranscripts_filtered.fasta
+    fi
+
     # 7. Statistics
     TOTAL=\$(grep -c '^>' ${supertranscripts_fasta})
     KEPT=\$(grep -c '^>' supertranscripts_filtered.fasta || echo 0)
+    NOHIT=\$(wc -l < no_hit_ids.txt)
+    KEPT_TAXON=\$((KEPT - NOHIT))
     REMOVED=\$((TOTAL - KEPT))
 
     cat > taxonomy_filter_stats.txt <<EOF
 Taxonomy filter: NCBI taxon ID ${filter_taxon}
-Total SuperTranscripts:    \$TOTAL
-Matching (kept):           \$KEPT (\$(awk "BEGIN{printf \\"%.1f\\", \$KEPT/\$TOTAL*100}")%)
-Non-matching (removed):    \$REMOVED (\$(awk "BEGIN{printf \\"%.1f\\", \$REMOVED/\$TOTAL*100}")%)
+Total SuperTranscripts:         \$TOTAL
+Kept (total):                   \$KEPT (\$(awk "BEGIN{printf \\"%.1f\\", \$KEPT/\$TOTAL*100}")%)
+  - Streptophyta-assigned:      \$KEPT_TAXON
+  - No taxonomy hit (rescued):  \$NOHIT
+Removed (non-plant):            \$REMOVED (\$(awk "BEGIN{printf \\"%.1f\\", \$REMOVED/\$TOTAL*100}")%)
 EOF
 
-    echo "Taxonomy filter: kept \$KEPT / \$TOTAL SuperTranscripts"
+    echo "Taxonomy filter: kept \$KEPT / \$TOTAL SuperTranscripts (\$NOHIT with no hit rescued)"
     """
 }
