@@ -46,6 +46,8 @@ def extractCondition(sample_name) {
 
 workflow {
 
+    main:
+
     // --- Input validation ---
     if (!params.trinity_fasta)       { error "Please provide --trinity_fasta" }
     if (!params.samplesheet)         { error "Please provide --samplesheet" }
@@ -247,6 +249,53 @@ workflow {
         MMSEQS2_TAXONOMY.out.breakdown,
         params.species_label
     )
+
+    // -- Published outputs (structure matches README § Output) --
+
+    publish:
+    clustering_clusters = CORSET.out.clust
+    clustering_counts   = CORSET.out.counts
+    supertranscripts    = LACE.out.fasta
+    taxonomy_fasta      = MMSEQS2_TAXONOMY.out.fasta
+    taxonomy_lca        = MMSEQS2_TAXONOMY.out.lca_tsv
+    taxonomy_stats      = MMSEQS2_TAXONOMY.out.stats
+    taxonomy_breakdown  = MMSEQS2_TAXONOMY.out.breakdown
+    frameshift_stats    = CORRECT_FRAMESHIFTS.out.stats
+    search_swissprot    = MMSEQS2_SEARCH_SWISSPROT.out.m8
+    search_pfam         = MMSEQS2_SEARCH_PFAM.out.m8
+    proteome            = SELECT_BEST_ORF.out.faa
+    best_orf_gff3       = SELECT_BEST_ORF.out.gff3
+    orf_gene_map        = SELECT_BEST_ORF.out.map
+    salmon_quant        = SALMON_QUANT_FINAL.out.quant_dir
+    busco_trinity       = BUSCO_TRINITY.out.outdir
+    busco_qc            = BUSCO_QC.out.outdir
+    transannot          = TRANSANNOT.out.annotation
+    thinning_report     = THINNING_REPORT.out.report
+}
+
+// -- Workflow output definitions (Nextflow ≥25.10) --
+// Maps published channels to output directory structure.
+// Default outputDir is params.outdir (see nextflow.config).
+
+output {
+    clustering_clusters { path 'clustering' }
+    clustering_counts   { path 'clustering' }
+    supertranscripts    { path 'supertranscripts' }
+    taxonomy_fasta      { path 'taxonomy' }
+    taxonomy_lca        { path 'taxonomy' }
+    taxonomy_stats      { path 'taxonomy' }
+    taxonomy_breakdown  { path 'taxonomy' }
+    frameshift_stats    { path 'frameshift_correction' }
+    search_swissprot    { path 'mmseqs2_search' }
+    search_pfam         { path 'mmseqs2_search' }
+    proteome            { path 'proteins' }
+    best_orf_gff3       { path 'annotation' }
+    orf_gene_map        { path 'annotation' }
+    salmon_quant        { path 'salmon_final' }
+    busco_trinity       { path 'qc' }
+    busco_qc            { path 'qc' }
+    transannot          { path 'transannot' }
+    thinning_report     { path '.' }
 }
 
 workflow.onComplete {
