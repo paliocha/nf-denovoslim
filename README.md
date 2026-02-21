@@ -33,7 +33,6 @@ Three routes through the pipeline: **Assembly** (green) follows the main process
 | 3 | Build SuperTranscripts | [Lace 2.0.0](https://github.com/paliocha/Lace) |
 | 4 | Taxonomy filter (keep Streptophyta) | MMseqs2 taxonomy |
 | 5 | Frameshift correction | Diamond blastx 2.1.22 |
-
 | 6 | ORF prediction with homology support | TD2 + MMseqs2 (SwissProt, Pfam) |
 | 7 | Best ORF selection (PSAURON FDR) | Python/BioPython |
 | 8 | Gene-level quantification | Salmon 1.10.3 |
