@@ -15,22 +15,15 @@
 ## giving proportionally faster taxonomy searches with minimal loss in
 ## classification accuracy for broad-level (phylum/kingdom) filtering.
 ##
-## IMPORTANT: Orion compute nodes cannot reach the internet.  Download the
-## required files ON THE LOGIN NODE first, then sbatch this script:
+## Prerequisites:
+##   - uniref50.fasta.gz in $DB_DIR
+##   - names.dmp, nodes.dmp, merged.dmp, delnodes.dmp in $TMP_DIR
+##   - taxidmapping_prefixed in $TMP_DIR
 ##
-##   # 1. Download on login node:
-##   cd $DB_DIR/tmp_uniref50
-##   wget -O taxdump.tar.gz https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz
-##   tar -xzf taxdump.tar.gz names.dmp nodes.dmp merged.dmp delnodes.dmp
-##   wget -O idmapping.dat.gz https://ftp.expasy.org/databases/uniprot/current_release/knowledgebase/idmapping/idmapping.dat.gz
-##   gunzip -c idmapping.dat.gz | awk '$2 == "NCBI_TaxID" {print "UniRef50_" $1 "\t" $3}' > taxidmapping_prefixed
+## Run scripts/download_uniref50.sh to download all prerequisites
+## and auto-submit this script.
 ##
-##   # 2. Download UniRef50 FASTA:
-##   cd $DB_DIR
-##   wget -c https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz
-##
-##   # 3. Submit build job:
-##   sbatch scripts/build_uniref50_mmseqstaxdb.sh
+## Manual:  sbatch scripts/build_uniref50_mmseqstaxdb.sh
 ##
 ## The database will be created at:
 ##   $DB_DIR/UniRef50taxdb

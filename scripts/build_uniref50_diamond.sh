@@ -17,12 +17,12 @@
 ## correction we only need the top hit, so UniRef50 clustering has
 ## negligible effect on correction accuracy.
 ##
-## Download the FASTA on the login node first:
+## Prerequisites:
+##   uniref50.fasta.gz must exist in $DB_DIR.
+##   Run scripts/download_uniref50.sh to download all prerequisites
+##   and auto-submit this script.
 ##
-##   cd $DB_DIR
-##   wget -c https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz
-##
-## Then:  sbatch scripts/build_uniref50_diamond.sh
+## Manual:  sbatch scripts/build_uniref50_diamond.sh
 ##
 ## Expected output: ~25-30 GB .dmnd file (vs ~86 GB for UniRef90)
 ##

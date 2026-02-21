@@ -31,7 +31,7 @@ Three routes through the pipeline: **Assembly** (green) follows the main process
 | 1 | Initial quantification (full Trinity, `--dumpEq`) | Salmon 1.10.3 |
 | 2 | Transcript-to-gene clustering | Corset 1.10 ([paliocha/Corset](https://github.com/paliocha/Corset)) |
 | 3 | Build SuperTranscripts | [Lace 2.0.0](https://github.com/paliocha/Lace) |
-| 4 | Taxonomy filter (keep Streptophyta) | MMseqs2 taxonomy |
+| 4 | Taxonomy filter (keep Viridiplantae) | MMseqs2 taxonomy |
 | 5 | Frameshift correction | Diamond blastx 2.1.22 |
 | 6 | ORF prediction with homology support | TD2 + MMseqs2 (SwissProt, Pfam) |
 | 7 | Best ORF selection (PSAURON FDR) | Python/BioPython |
@@ -45,8 +45,8 @@ Three routes through the pipeline: **Assembly** (green) follows the main process
 
 - [Nextflow](https://www.nextflow.io/) >= 23.04
 - [Apptainer](https://apptainer.org/) (or Singularity / Docker)
-- Pre-built MMseqs2 databases: SwissProt, Pfam, eggNOG7, UniRef90 taxonomy
-- Diamond database: UniRef90 (for frameshift correction)
+- Pre-built MMseqs2 databases: SwissProt, Pfam, eggNOG7, UniRef50 taxonomy
+- Diamond database: UniRef50 (for frameshift correction)
 - eggNOG annotation TSV (for TransAnnot)
 - Local containers: `containers/td2/td2_1.0.8.sif`, `containers/lace/lace_2.0.sif`
 
@@ -61,8 +61,8 @@ nextflow run main.nf \
     --mmseqs2_swissprot /path/to/SwissProtDB \
     --mmseqs2_pfam /path/to/PfamDB \
     --mmseqs2_eggnog /path/to/eggNOG7DB \
-    --mmseqs2_taxonomy_db /path/to/UniRef90taxdb \
-    --diamond_db /path/to/uniref90.dmnd \
+    --mmseqs2_taxonomy_db /path/to/UniRef50taxdb \
+    --diamond_db /path/to/uniref50.dmnd \
     --eggnog_annotations /path/to/eggnog_annotations.tsv \
     --busco_lineage poales_odb12 \
     --outdir /path/to/results
@@ -104,11 +104,11 @@ Combine as needed: `-profile apptainer,orion` or `-profile apptainer,slurm,highm
 | `--mmseqs2_swissprot` | required | MMseqs2 SwissProt DB |
 | `--mmseqs2_pfam` | required | MMseqs2 Pfam DB |
 | `--mmseqs2_eggnog` | required | MMseqs2 eggNOG7 profiles DB |
-| `--mmseqs2_taxonomy_db` | required | MMseqs2 UniRef90 taxonomy DB |
-| `--diamond_db` | required | Diamond UniRef90 DB |
+| `--mmseqs2_taxonomy_db` | required | MMseqs2 UniRef50 taxonomy DB |
+| `--diamond_db` | required | Diamond UniRef50 DB |
 | `--eggnog_annotations` | required | eggNOG annotation TSV |
 | `--busco_lineage` | required | BUSCO lineage (e.g. `poales_odb12`) |
-| `--filter_taxon` | `35493` | NCBI taxon ID to keep (Streptophyta) |
+| `--filter_taxon` | `33090` | NCBI taxon ID to keep (Viridiplantae) |
 | `--mmseqs2_search_sens` | `7.0` | MMseqs2 `-s` sensitivity |
 | `--td2_min_orf_length` | `90` | Minimum ORF length (aa) |
 | `--td2_strand_specific` | `true` | TD2 strand-specific mode |
@@ -128,11 +128,12 @@ mmseqs databases Pfam-A.full PfamDB tmp
 # eggNOG7 profiles
 mmseqs databases eggNOG eggNOG7DB tmp
 
-# UniRef90 taxonomy database
-sbatch scripts/setup_uniref90_taxdb.sh
+# UniRef50 taxonomy + Diamond databases (downloads prerequisites, then builds)
+sbatch scripts/download_uniref50.sh
 
-# UniRef90 Diamond database
-sbatch build_uniref90_diamond.sh
+# Or build individually (if prerequisites already downloaded):
+#   sbatch scripts/build_uniref50_diamond.sh
+#   sbatch scripts/build_uniref50_mmseqstaxdb.sh
 ```
 
 ## Building containers
@@ -162,7 +163,8 @@ results/
 ├── taxonomy/
 │   ├── taxRes_lca.tsv
 │   ├── supertranscripts_filtered.fasta
-│   └── taxonomy_filter_stats.txt
+│   ├── taxonomy_filter_stats.txt
+│   └── taxonomy_breakdown.tsv
 ├── frameshift_correction/
 │   └── frameshift_stats.txt
 ├── mmseqs2_search/
