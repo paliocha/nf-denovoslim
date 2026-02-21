@@ -7,7 +7,7 @@ Usage:
         <grouper_clust> <orf_to_gene_map> <faa> \\
         <initial_quant_dirs> <final_quant_dirs> \\
         <busco_trinity_summary> <busco_final_summary> \\
-        <id_validation> <sortmerna_logs>
+        <id_validation> <sortmerna_logs> <taxonomy_breakdown>
 
 Outputs:
     {species_label}_thinning_report.txt
@@ -99,11 +99,12 @@ def fmt(number):
 
 
 def main():
-    if len(sys.argv) < 12:
+    if len(sys.argv) < 13:
         print(f"Usage: {sys.argv[0]} <species_label> <trinity.fasta> "
               f"<supertranscripts.fasta> <grouper_clust> <orf_map> <faa> "
               f"<initial_quant_dirs> <final_quant_dirs> <busco_trinity_summary> "
-              f"<busco_final_summary> <id_validation> [sortmerna_logs]",
+              f"<busco_final_summary> <id_validation> [sortmerna_logs] "
+              f"[taxonomy_breakdown]",
               file=sys.stderr)
         sys.exit(1)
 
@@ -119,6 +120,7 @@ def main():
     busco_final   = sys.argv[10]
     id_validation = sys.argv[11]
     sortmerna_arg = sys.argv[12] if len(sys.argv) > 12 else ""
+    taxonomy_arg  = sys.argv[13] if len(sys.argv) > 13 else ""
 
     # ── SortMeRNA rRNA removal stats ───────────────────────────────────
 
@@ -131,6 +133,22 @@ def main():
                 if parsed:
                     parsed['sample'] = os.path.basename(os.path.dirname(logpath)) or logpath
                     sortmerna_stats.append(parsed)
+
+    # ── Taxonomy breakdown ───────────────────────────────────────────────
+
+    taxonomy_rows = []
+    if taxonomy_arg and os.path.isfile(taxonomy_arg):
+        with open(taxonomy_arg) as f:
+            header = f.readline()  # skip header
+            for line in f:
+                parts = line.strip().split("\t")
+                if len(parts) >= 4:
+                    taxonomy_rows.append({
+                        'category': parts[0],
+                        'count': int(parts[1]),
+                        'percent': parts[2],
+                        'status': parts[3],
+                    })
 
     # ── Sequence counts and lengths ──────────────────────────────────────
 
@@ -243,8 +261,41 @@ def main():
         r.write(f"\n  Overall reduction: {n_trinity} -> {n_genes} "
                 f"({n_trinity/n_genes:.1f}x collapse)\n\n")
 
-        # --- Section 3: Sequence lengths ---
-        r.write("3. SEQUENCE LENGTH DISTRIBUTION (nt)\n")
+        # --- Section 3: Taxonomy filter ---
+        r.write("3. TAXONOMY FILTER (MMseqs2)\n")
+        r.write("-" * 40 + "\n")
+        if taxonomy_rows:
+            # Find TOTAL row for summary
+            total_row = next((row for row in taxonomy_rows if row['category'] == 'TOTAL'), None)
+            kept_rows = [row for row in taxonomy_rows if row['status'] == 'KEPT']
+            removed_rows = [row for row in taxonomy_rows if row['status'] == 'REMOVED']
+            kept_count = sum(row['count'] for row in kept_rows)
+            removed_count = sum(row['count'] for row in removed_rows)
+
+            if total_row:
+                total_count = total_row['count']
+                r.write(f"  SuperTranscripts classified:  {fmt(total_count)}\n")
+                r.write(f"  Kept (Viridiplantae + no-hit): {fmt(kept_count)}  "
+                        f"({kept_count/total_count*100:.1f}%)\n")
+                r.write(f"  Removed (non-plant):           {fmt(removed_count)}  "
+                        f"({removed_count/total_count*100:.1f}%)\n")
+            r.write("\n")
+
+            # Breakdown table
+            cat_width = max(len(row['category']) for row in taxonomy_rows) + 2
+            r.write(f"  {'Category':<{cat_width}} {'Count':>10} {'Percent':>10}  Status\n")
+            r.write(f"  {'-' * cat_width} {'-' * 10} {'-' * 10}  {'-' * 7}\n")
+            for row in taxonomy_rows:
+                if row['category'] == 'TOTAL':
+                    r.write(f"  {'-' * cat_width} {'-' * 10} {'-' * 10}  {'-' * 7}\n")
+                r.write(f"  {row['category']:<{cat_width}} {row['count']:>10,} "
+                        f"{row['percent']:>10}  {row['status']}\n")
+        else:
+            r.write("  (taxonomy breakdown not available)\n")
+        r.write("\n")
+
+        # --- Section 4: Sequence lengths ---
+        r.write("4. SEQUENCE LENGTH DISTRIBUTION (nt)\n")
         r.write("-" * 40 + "\n")
         r.write(f"  {'Stage':<30} {'N':>8} {'Mean':>10} {'Median':>10} "
                 f"{'Min':>8} {'Max':>10}\n")
@@ -265,8 +316,8 @@ def main():
                     f"(+{median_increase:.1f}%, {st_median/trinity_median:.1f}x)\n")
         r.write("\n")
 
-        # --- Section 4: Protein/ORF stats ---
-        r.write("4. PREDICTED PROTEINS\n")
+        # --- Section 5: Protein/ORF stats ---
+        r.write("5. PREDICTED PROTEINS\n")
         r.write("-" * 40 + "\n")
         r.write(f"  Total proteins:      {fmt(n_proteins)}\n")
         if orf_lengths:
@@ -277,8 +328,8 @@ def main():
             r.write(f"  Median PSAURON:      {statistics.median(psauron_scores):.3f}\n")
         r.write("\n")
 
-        # --- Section 5: Corset cluster sizes ---
-        r.write("5. CORSET CLUSTER SIZES\n")
+        # --- Section 6: Corset cluster sizes ---
+        r.write("6. CORSET CLUSTER SIZES\n")
         r.write("-" * 40 + "\n")
         if cluster_counts:
             r.write(f"  Total clusters (genes): {fmt(len(cluster_counts))}\n")
@@ -290,8 +341,8 @@ def main():
                     f"({singleton/len(cluster_counts)*100:.1f}%)\n")
         r.write("\n")
 
-        # --- Section 6: Expression summary ---
-        r.write("6. EXPRESSION SUMMARY (mean TPM across samples)\n")
+        # --- Section 7: Expression summary ---
+        r.write("7. EXPRESSION SUMMARY (mean TPM across samples)\n")
         r.write("-" * 40 + "\n")
         r.write(f"  {'Metric':<35} {'Transcript':>12} {'Gene':>12}\n")
         if init_mean_tpms and final_mean_tpms:
@@ -317,8 +368,8 @@ def main():
             r.write("  (expression data not available)\n")
         r.write("\n")
 
-        # --- Section 7: BUSCO ---
-        r.write("7. BUSCO COMPLETENESS\n")
+        # --- Section 8: BUSCO ---
+        r.write("8. BUSCO COMPLETENESS\n")
         r.write("-" * 40 + "\n")
 
         r.write("  --- Trinity baseline (transcriptome mode) ---\n")
@@ -337,8 +388,8 @@ def main():
             r.write("  (BUSCO final summary not available)\n")
         r.write("\n")
 
-        # --- Section 8: ID validation ---
-        r.write("8. ID CONSISTENCY CHECK\n")
+        # --- Section 9: ID validation ---
+        r.write("9. ID CONSISTENCY CHECK\n")
         r.write("-" * 40 + "\n")
         if id_val_text:
             for line in id_val_text.splitlines():

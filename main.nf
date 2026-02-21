@@ -245,6 +245,7 @@ workflow {
         BUSCO_QC.out.outdir,
         VALIDATE_IDS.out.report,
         SORTMERNA.out.log.map { sample_id, log -> log }.collect(),
+        MMSEQS2_TAXONOMY.out.breakdown,
         params.species_label
     )
 }

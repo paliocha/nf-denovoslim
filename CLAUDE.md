@@ -150,7 +150,7 @@ Orion's site sbatch wrapper injects `BASH_ENV` → causes infinite recursion for
 ## Known Gotchas
 
 1. **Lace caps at 50 transcripts per cluster** — expected for fragmented clusters
-2. **Taxonomy filter drops no-hit sequences** — removes contamination by design
+2. **Taxonomy filter keeps Viridiplantae + no-hit** — `filter_taxon=33090` (Viridiplantae) + taxid 0 (no-hit). Non-plant eukaryotes (fungi, nematodes, oomycetes), bacteria, archaea, viruses are all removed. The `awk '$3 != 1'` intermediate step on `filteredTaxResult.index` is **required** — without it, `filtertaxdb` + `createsubdb` passes everything through (MMseqs2 filtertaxdb zeros data but keeps keys)
 3. **Corset cluster count scales with samples** — 40 samples → ~244K clusters (condition-aware)
 4. **Sample naming** — `{SPECIES}{ID}_{Timepoint}_{Tissue}`. Non-standard names need explicit `condition` column in samplesheet
 5. **Frameshift correction uses two containers** — Diamond (blastx) then BioPython (correction script)

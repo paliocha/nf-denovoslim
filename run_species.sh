@@ -59,10 +59,10 @@ nextflow run $PIPELINE_DIR/main.nf \
     --mmseqs2_pfam $DB_BASE/PfamDB \
     --mmseqs2_eggnog $DB_BASE/eggNOG7_profiles \
     --eggnog_annotations $DB_BASE/e7_as_e5_annotations.tsv \
-    --mmseqs2_taxonomy_db $LOCAL_DB/UniRef90taxdb \
-    --diamond_db $LOCAL_DB/uniref90.dmnd \
+    --mmseqs2_taxonomy_db $LOCAL_DB/UniRef50taxdb \
+    --diamond_db $LOCAL_DB/uniref50.dmnd \
     --busco_lineage poales_odb12 \
-    --filter_taxon 35493 \
+    --filter_taxon 33090 \
     --unix_group fjellheimlab \
     --orion_exclude_nodes cn-37 \
     --outdir $OUTDIR

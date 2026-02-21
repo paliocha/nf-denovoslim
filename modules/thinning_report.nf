@@ -17,6 +17,7 @@ process THINNING_REPORT {
     path(busco_final)
     path(id_validation)
     path(sortmerna_logs, stageAs: 'sortmerna_??.log')
+    path(taxonomy_breakdown)
     val(species_label)
 
     output:
@@ -46,6 +47,7 @@ process THINNING_REPORT {
         \$BUSCO_TRINITY_FILE \\
         \$BUSCO_FINAL_FILE \\
         ${id_validation} \\
-        ${log_files}
+        ${log_files} \\
+        ${taxonomy_breakdown}
     """
 }

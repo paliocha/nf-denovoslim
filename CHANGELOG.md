@@ -5,6 +5,18 @@ All notable changes to nf-denovoslim are documented in this file.
 ## [Unreleased]
 
 ### Changed
+- **Taxonomy filter fixed and tightened**:
+  - Fixed critical bug: `filtertaxdb` + `createsubdb` was passing ALL sequences
+    through (filtertaxdb zeros data but keeps keys; added `awk '$3 != 1'`
+    intermediate step per MMseqs2 wiki)
+  - Switched from `35493` (Streptophyta) + `2759` (Eukaryota) to `33090`
+    (Viridiplantae) + `0` (no-hit only) — now removes fungi, nematodes,
+    oomycetes, bacteria, archaea, viruses (~27% of BMAX SuperTranscripts)
+  - Added taxonomy lineage breakdown table to filter output and thinning report
+- **Switched from UniRef90 to UniRef50** for both taxonomy classification and
+  DIAMOND frameshift correction — ~3-4× fewer sequences (52M vs 188M) gives
+  proportionally faster searches with negligible effect on kingdom-level
+  classification or frameshift correction accuracy
 - **DIAMOND blastx optimised** — expected ~4–6× speedup (5.8 h → ~1–1.5 h):
   - `--strand plus`: skip reverse-strand translation (correction script already
     discards reverse hits); halves translated query volume
