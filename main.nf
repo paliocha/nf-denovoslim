@@ -249,10 +249,6 @@ workflow {
     )
 }
 
-output {
-    directory params.outdir
-}
-
 workflow.onComplete {
     log.info ""
     log.info "Pipeline completed: ${workflow.success ? 'SUCCESS' : 'FAILED'}"
