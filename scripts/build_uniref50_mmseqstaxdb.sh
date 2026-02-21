@@ -4,8 +4,9 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=600G
 #SBATCH --time=12:00:00
-#SBATCH --job-name=build-uniref50-taxdb
-#SBATCH --output=%x_%A.out
+#SBATCH --job-name=mmseqs_uniref50_taxdb
+#SBATCH --output=mmseqs_uniref50_taxdb_%j.out
+#SBATCH --error=mmseqs_uniref50_taxdb_%j.err
 
 ##
 ## Build a UniRef50 MMseqs2 taxonomy database (seqTaxDB) from scratch.
@@ -29,7 +30,7 @@
 ##   wget -c https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz
 ##
 ##   # 3. Submit build job:
-##   sbatch scripts/setup_uniref50_taxdb.sh
+##   sbatch scripts/build_uniref50_mmseqstaxdb.sh
 ##
 ## The database will be created at:
 ##   $DB_DIR/UniRef50taxdb
