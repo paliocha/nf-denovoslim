@@ -17,6 +17,26 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
 
 The **full, unfiltered Trinity assembly** goes directly into Salmon (with `--dumpEq`, no `--hardFilter`) so that multi-mapping signal across isoforms is preserved for Corset's hierarchical clustering. Deduplicating transcripts *before* Corset destroys this signal and produces mostly singleton clusters.
 
+### Taxonomy filtering
+
+Step 4 uses MMseqs2 `taxonomy` against UniRef50 to classify every SuperTranscript and remove non-plant contaminants (bacteria, fungi, oomycetes, metazoa, viruses, etc.), keeping only Viridiplantae (NCBI taxon 33090) and unclassified sequences (taxon 0 — likely novel or species-specific genes with no database hit).
+
+Key parameter choices:
+
+- **`--lca-mode 3` (weighted LCA)** — each ORF's hits are weighted by alignment score, and the LCA is computed across the top-scoring hits using majority voting (`--majority 0.5`). This avoids the artificially deep assignments of naive LCA while being more robust than top-hit-only classification, especially for genes with patchy taxonomic coverage in UniRef50.
+- **`--lca-search false` (default)** — the standard multi-step pipeline (extract ORFs → prefilter → align → collect all hits → then compute LCA). The alternative `--lca-search true` computes LCA on-the-fly during alignment, which is faster but less accurate because it cannot consider all hits before deciding. For a filtering step where false negatives mean losing real genes, accuracy matters more than speed.
+- **ORF filter (`--orf-filter 1`, sensitivity 2)** — before the main `-s 7.0` search, a fast low-sensitivity pre-screen discards ORFs with no detectable homology, reducing the query set from millions of short ORFs to only those with plausible hits. This dramatically cuts runtime without affecting the final taxonomy assignments.
+- **UniRef50 (not UniRef90)** — 60M clusters vs 300M+ sequences. UniRef50 provides sufficient taxonomic resolution for kingdom-level filtering while fitting in ~500 GB RAM and running 3–4× faster than UniRef90.
+
+### Dual BUSCO assessment
+
+The pipeline runs BUSCO twice to measure deduplication effectiveness:
+
+1. **BUSCO Trinity** (transcriptome mode) — baseline on the raw Trinity assembly, typically showing high completeness but extreme duplication (~90% D) due to multiple isoforms per gene.
+2. **BUSCO QC** (protein mode) — on the final best-ORF proteins (one per gene). Duplicated BUSCOs should drop dramatically (to ~10–30% D) since each Corset cluster yields one SuperTranscript → one best ORF → one protein. Residual duplication reflects genuine paralogs, not assembly artifacts.
+
+Protein-mode BUSCO is the definitive quality metric because (a) it operates directly on the pipeline's deliverable, (b) it avoids MetaEuk gene prediction artifacts that inflate duplication in transcriptome mode, and (c) the one-protein-per-gene design means any remaining duplication is biologically real.
+
 ## Pipeline
 
 <picture>
