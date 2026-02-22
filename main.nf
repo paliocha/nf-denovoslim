@@ -265,6 +265,7 @@ workflow {
         VALIDATE_IDS.out.report,
         SORTMERNA.out.log.map { _sample_id, logfile -> logfile }.collect(),
         MMSEQS2_TAXONOMY.out.breakdown,
+        TRANSANNOT.out.annotation,
         params.species_label
     )
 

@@ -7,7 +7,8 @@ Usage:
         <grouper_clust> <orf_to_gene_map> <faa> \\
         <initial_quant_dirs> <final_quant_dirs> \\
         <busco_trinity_summary> <busco_final_summary> \\
-        <id_validation> <sortmerna_logs> <taxonomy_breakdown>
+        <id_validation> <sortmerna_logs> <taxonomy_breakdown> \\
+        <transannot_tsv>
 
 Outputs:
     {species_label}_thinning_report.txt
@@ -148,6 +149,7 @@ def main():
     id_validation = sys.argv[11]
     sortmerna_arg = sys.argv[12] if len(sys.argv) > 12 else ""
     taxonomy_arg  = sys.argv[13] if len(sys.argv) > 13 else ""
+    annot_arg     = sys.argv[14] if len(sys.argv) > 14 else ""
 
     # ── SortMeRNA rRNA removal stats ───────────────────────────────────
 
@@ -176,6 +178,27 @@ def main():
                         'percent': parts[2],
                         'status': parts[3],
                     })
+
+    # ── TransAnnot functional annotation ─────────────────────────────────
+
+    # Per-protein sets of DBs that produced a hit; also collect top Pfam domains
+    annot_by_protein = defaultdict(set)   # queryID -> {db_name, ...}
+    pfam_counts = defaultdict(int)        # Pfam target description -> count
+    if annot_arg and os.path.isfile(annot_arg):
+        with open(annot_arg) as f:
+            for line in f:
+                if line.startswith("queryID"):
+                    continue  # skip header
+                parts = line.strip().split("\t")
+                if len(parts) >= 10:
+                    query_id = parts[0]
+                    target_desc = parts[4]
+                    db_name = parts[9].strip()
+                    annot_by_protein[query_id].add(db_name)
+                    if 'pfam' in db_name.lower():
+                        # Use first word of description as Pfam family
+                        pfam_fam = target_desc.split()[0] if target_desc else 'unknown'
+                        pfam_counts[pfam_fam] += 1
 
     # ── Sequence counts and lengths ──────────────────────────────────────
 
@@ -415,8 +438,46 @@ def main():
             r.write("  (BUSCO final summary not available)\n")
         r.write("\n")
 
-        # --- Section 9: ID validation ---
-        r.write("9. ID CONSISTENCY CHECK\n")
+        # --- Section 9: Functional annotation ---
+        r.write("9. FUNCTIONAL ANNOTATION (TransAnnot)\n")
+        r.write("-" * 40 + "\n")
+        if annot_by_protein:
+            n_annotated = len(annot_by_protein)
+            pct_annotated = n_annotated / n_proteins * 100 if n_proteins > 0 else 0.0
+
+            # Count per-DB coverage
+            all_dbs = set()
+            for dbs in annot_by_protein.values():
+                all_dbs.update(dbs)
+
+            db_protein_count = defaultdict(int)
+            for dbs in annot_by_protein.values():
+                for db in dbs:
+                    db_protein_count[db] += 1
+
+            r.write(f"  Proteins with any annotation: {fmt(n_annotated)} / "
+                    f"{fmt(n_proteins)}  ({pct_annotated:.1f}%)\n\n")
+
+            r.write(f"  {'Database':<30} {'Proteins':>10} {'% of total':>12}\n")
+            r.write(f"  {'-' * 30} {'-' * 10} {'-' * 12}\n")
+            for db in sorted(db_protein_count, key=db_protein_count.get, reverse=True):
+                cnt = db_protein_count[db]
+                pct = cnt / n_proteins * 100 if n_proteins > 0 else 0.0
+                r.write(f"  {db:<30} {cnt:>10,} {pct:>11.1f}%\n")
+
+            # Top Pfam domains
+            if pfam_counts:
+                r.write(f"\n  Top 15 Pfam domains:\n")
+                for domain, count in sorted(pfam_counts.items(),
+                                            key=lambda x: x[1],
+                                            reverse=True)[:15]:
+                    r.write(f"    {domain:<40} {count:>8,}\n")
+        else:
+            r.write("  (annotation data not available)\n")
+        r.write("\n")
+
+        # --- Section 10: ID validation ---
+        r.write("10. ID CONSISTENCY CHECK\n")
         r.write("-" * 40 + "\n")
         if id_val_text:
             for line in id_val_text.splitlines():
