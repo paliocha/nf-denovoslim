@@ -114,6 +114,17 @@ Error strategy: retry on OOM/SLURM-kill exit codes (104, 134, 137, 139, 140, 143
 
 Heaviest processes: TRANSANNOT (500/700/1000 GB), MMSEQS2_TAXONOMY (580/700/900 GB), CORSET (128 GB/48h).
 
+### TD2 ORF Prediction Tuning
+
+TD2.LongOrfs uses three length parameters:
+- `-m 90` — min ORF length (aa) for long transcripts
+- `-M 50` — absolute min ORF length (aa) for short transcripts
+- `-L 0.5` — accept short ORF if it covers ≥ 50% of transcript length
+
+This length-scaling is critical for de novo assemblies where median SuperTranscript length is ~620 nt. Without `-M`/`-L`, 54% of genes lose all candidate ORFs at the LongOrfs stage because they're too short for a 90 aa ORF.
+
+TD2.Predict uses PSAURON (FDR=0.1 dynamic threshold) + homology rescue (`--retain-mmseqs-hits`). The `--retain-long-orfs-fdr` flag controls the FDR threshold (default 0.1).
+
 ## ID Consistency
 
 Pipeline correctness depends on matching IDs:
@@ -159,3 +170,4 @@ Orion's site sbatch wrapper (`/cluster/software/slurm/site/bin/sbatch`) injects 
    - `-g N` (global ranking): Diamond's ungapped-score ranking cannot be slotted into the 3-frame DP extension pipeline.
    - `--iterate`: runs a sequence of sensitivity steps; the final steps (`default`, `sensitive`) use full matrix extension which `-F` does not support. Error: `Frameshift alignment does not support full matrix extension`.
    Use `--sensitive` directly (not `--iterate --sensitive`). Performance is controlled by `--top 1` (limits gapped extensions to near-best targets).
+8. **TD2 `-M` requires `-L`** — setting `-M` (absolute min) without `-L` (length-scale) has no effect. Both must be set together. The logic: accept ORF if `len >= -m` OR (`len >= -M` AND `len/transcript_len >= -L`).
