@@ -27,7 +27,7 @@ process DIAMOND_BLASTX {
     # (c=1) for minimum passes.  If RAM is tight, increase c to reduce
     # per-pass index memory at the cost of more passes.
     MEM_GB=${task.memory.toGiga()}
-    DB_LETTERS=\$(diamond dbinfo -d \$LOCAL_DB 2>/dev/null | awk '/^[Ll]etters/{print \$NF}')
+    DB_LETTERS=\$(diamond dbinfo -d \$LOCAL_DB 2>/dev/null | awk '/[Ll]etters/{print \$NF}')
     # Minimum -b to hold the whole DB in one reference block
     MIN_B=\$(( (DB_LETTERS + 999999999) / 1000000000 ))   # ceil(letters / 1e9)
 
