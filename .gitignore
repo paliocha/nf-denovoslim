@@ -22,3 +22,4 @@ containers/
 
 # Internal analysis notes (not part of pipeline)
 nph71009-sup-0001-figures1-s8-tables1-s3.pdf
+bin/__pycache__/

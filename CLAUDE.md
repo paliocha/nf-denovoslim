@@ -125,7 +125,7 @@ This length-scaling is critical for de novo assemblies where median SuperTranscr
 
 TD2.Predict uses PSAURON (FDR=0.1 dynamic threshold) + homology rescue (`--retain-mmseqs-hits`). The `--retain-long-orfs-fdr` flag controls the FDR threshold (default 0.1).
 
-Three strategy profiles documented in README (conservative/standard/aggressive). Standard is the default. A `--td2_strategy` convenience flag is planned but not yet implemented.
+Three strategy profiles: conservative/standard/aggressive, selectable via `--td2_strategy`. When null (default), individual params are used. Strategy overrides individual params when set.
 
 ## ID Consistency
 

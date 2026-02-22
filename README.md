@@ -53,7 +53,17 @@ The pipeline ships three TD2 tuning strategies:
 | **Standard** (default) | 90 | 50 | 0.5 | 0.10 | Fragmented *de novo* assemblies (median ~500–800 nt). Recovers short proteins proportional to transcript length while filtering noise from longer sequences. |
 | **Aggressive** | 90 | 30 | 0.4 | 0.10 | Highly fragmented assemblies or when maximising sensitivity matters more than precision. Recovers very short ORFs (≥30 aa / 90 nt) at the cost of more false positives passing to TD2.Predict. |
 
-Currently these are set via individual parameters (`--td2_min_orf_length`, `--td2_abs_min_orf`, `--td2_length_scale`). A `--td2_strategy` convenience flag is planned (see [TODO](#todo)).
+Currently these are set via individual parameters (`--td2_min_orf_length`, `--td2_abs_min_orf`, `--td2_length_scale`) or with the convenience flag:
+
+```bash
+# Use a named strategy (overrides individual TD2 params)
+nextflow run main.nf --td2_strategy conservative ...
+nextflow run main.nf --td2_strategy standard ...    # same as defaults
+nextflow run main.nf --td2_strategy aggressive ...
+
+# Or set individual params directly (when --td2_strategy is not set)
+nextflow run main.nf --td2_abs_min_orf 60 --td2_length_scale 0.6 ...
+```
 
 ### Dual BUSCO assessment
 
@@ -157,6 +167,7 @@ Combine as needed: `-profile apptainer,orion` or `-profile apptainer,slurm,highm
 | `--busco_lineage` | required | BUSCO lineage (e.g. `poales_odb12`) |
 | `--filter_taxon` | `33090` | NCBI taxon ID to keep (Viridiplantae) |
 | `--mmseqs2_search_sens` | `7.0` | MMseqs2 `-s` sensitivity |
+| `--td2_strategy` | `null` | TD2 strategy preset: `conservative`, `standard`, or `aggressive` (overrides individual TD2 params) |
 | `--td2_min_orf_length` | `90` | Min ORF length (aa) for long transcripts (`-m`) |
 | `--td2_abs_min_orf` | `50` | Absolute min ORF length (aa) for short transcripts (`-M`) |
 | `--td2_length_scale` | `0.5` | Accept short ORF if it covers ≥ this fraction of transcript (`-L`) |
@@ -256,10 +267,6 @@ dds <- DESeqDataSetFromTximport(txi, colData = samples, design = ~ condition)
 ```
 
 The Corset transcript-to-gene map is at `results/clustering/corset-clusters.txt` if transcript-level import is needed.
-
-## TODO
-
-- [ ] Add `--td2_strategy {conservative,standard,aggressive}` convenience parameter that sets `-m`/`-M`/`-L`/FDR as a single flag, overriding individual params when specified
 
 ## Author
 

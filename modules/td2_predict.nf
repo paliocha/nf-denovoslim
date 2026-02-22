@@ -23,6 +23,7 @@ process TD2_PREDICT {
     path("${supertranscripts_fasta.baseName}/psauron_score.csv"), emit: psauron_scores
 
     script:
+    def args = task.ext.args ?: ''
     """
     # Concatenate homology hits from both searches
     cat ${swissprot_m8} ${pfam_m8} > combined_alnRes.m8
@@ -36,6 +37,7 @@ process TD2_PREDICT {
     TD2.Predict \\
         -t ${supertranscripts_fasta} \\
         --retain-mmseqs-hits combined_alnRes.m8 \\
+        ${args} \\
         -v
     """
 }
