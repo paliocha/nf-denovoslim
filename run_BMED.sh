@@ -11,7 +11,6 @@
 source ~/.bashrc
 eval "$(micromamba shell hook --shell bash)"
 micromamba activate Nextflow
-export NXF_SYNTAX_PARSER=v2
 
 module load Java
 module load Anaconda3
