@@ -21,19 +21,23 @@ process DIAMOND_BLASTX {
     cp "${diamond_db}" .
     LOCAL_DB=./\$(basename "${diamond_db}")
 
-    # Run Diamond blastx with frameshift-tolerant alignment
-    # --iterate is incompatible with -F (frameshift): iterate's non-linear steps
-    # (default, sensitive) use full matrix extension which -F does not support.
+    # Run Diamond blastx with frameshift-tolerant alignment.
+    # --iterate is incompatible with -F: non-linear steps use full matrix
+    # extension which frameshift mode does not support.
+    # Memory (128 GB+) lets Diamond auto-select a large block size,
+    # reducing the number of passes over the DB.
     diamond blastx \\
         -F 15 \\
         --sensitive \\
         --strand plus \\
-        --top 1 \\
-        --min-score 50 \\
-        -b 4 -c 1 \\
+        --top 5 \\
+        --min-score 100 \\
+        --id 60 \\
+        --unal 1 \\
         -d \$LOCAL_DB \\
         -q ${supertranscripts_fasta} \\
         --outfmt 6 qseqid qstart qend qlen qframe btop \\
+            sseqid slen sstart send evalue bitscore score length pident qseq \\
         -p ${task.cpus} \\
         --tmpdir . \\
         -o diamond_frameshift.tsv
