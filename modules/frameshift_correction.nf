@@ -28,7 +28,6 @@ process DIAMOND_BLASTX {
         --strand plus \
         --top 1 \
         --min-score 50 \
-        -g 512 \
         -b 4 -c 1 \
         -d \$LOCAL_DB \
         -q ${supertranscripts_fasta} \
