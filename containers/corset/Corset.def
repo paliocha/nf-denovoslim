@@ -11,6 +11,7 @@ From: ubuntu:24.04
     apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         autoconf \
+        cmake \
         wget \
         ca-certificates \
         zlib1g-dev \
@@ -20,6 +21,7 @@ From: ubuntu:24.04
         libdeflate-dev \
         libssl-dev \
         libgomp1 \
+        libxml2-dev \
         && rm -rf /var/lib/apt/lists/*
 
     # ---------- build htslib 1.23 from source ----------
@@ -33,17 +35,33 @@ From: ubuntu:24.04
     ldconfig
     cd /tmp && rm -rf htslib-1.23*
 
+    # ---------- build igraph 1.0.1 from source ----------
+    cd /tmp
+    wget -q https://github.com/igraph/igraph/releases/download/1.0.1/igraph-1.0.1.tar.gz
+    tar xzf igraph-1.0.1.tar.gz
+    cd igraph-1.0.1
+    mkdir build && cd build
+    cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local \
+             -DCMAKE_BUILD_TYPE=Release \
+             -DIGRAPH_OPENMP_SUPPORT=ON \
+             -DIGRAPH_ENABLE_TLS=ON \
+             -DBUILD_SHARED_LIBS=ON
+    make -j$(nproc)
+    make install
+    ldconfig
+    cd /tmp && rm -rf igraph-1.0.1*
+
     # ---------- build corset ----------
     cd /opt/corset
     autoconf configure.in > configure && chmod +x configure
-    ./configure --with-htslib=/usr/local
+    ./configure --with-htslib=/usr/local --with-igraph=/usr/local
     make clean
     make -j$(nproc)
     make install prefix=/usr/local
 
     # Clean build artifacts only (keep all system packages for runtime libs)
     cd /opt/corset && make clean || true
-    rm -rf /tmp/htslib-* /var/lib/apt/lists/*
+    rm -rf /tmp/htslib-* /tmp/igraph-* /var/lib/apt/lists/*
 
 %environment
     export PATH="/usr/local/bin:${PATH}"
@@ -55,16 +73,20 @@ From: ubuntu:24.04
 %labels
     Author Martin Paliocha
     Version 1.10.0
-    Description Corset 1.10.0 with OpenMP-parallelised hierarchical clustering and modern htslib 1.23
+    Description Corset 1.10.0 with OpenMP, Leiden clustering (igraph), and htslib 1.23
 
 %help
-    Corset fork with OpenMP parallelism for the hierarchical clustering step.
+    Corset fork with OpenMP parallelism and optional Leiden clustering.
     Ported from legacy samtools 0.x API to htslib 1.23.
 
     New options:
-      -t <int>       Number of threads (default: OMP_NUM_THREADS)
-      --version, -v  Print version and exit
-      --help, -h     Print usage and exit
+      -t <int>              Threads (default: OMP_NUM_THREADS)
+      --algorithm <str>     hierarchical (default) or leiden
+                            Leiden uses -d thresholds as CPM resolution
+      --version, -v         Print version and exit
+      --help, -h            Print usage and exit
 
-    Usage:  corset -t 16 -i salmon_eq_classes -g group1,group1,group2,group2 \
+    Usage:  corset --algorithm leiden -d 0.3 \
+                  -t 16 -i salmon_eq_classes \
+                  -g group1,group1,group2,group2 \
                   -p my_prefix eq_class_1.sf eq_class_2.sf ...
