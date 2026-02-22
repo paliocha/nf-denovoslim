@@ -59,7 +59,7 @@ process DIAMOND_BLASTX {
         --sensitive \\
         --strand plus \\
         --top 5 \\
-        --min-score 100 \\
+        --min-score 60 \\
         --id 60 \\
         --unal 1 \\
         -b \$BLOCK -c \$CHUNKS \\
