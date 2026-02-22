@@ -34,7 +34,7 @@ process DIAMOND_BLASTX {
         --min-score 100 \\
         --id 60 \\
         --unal 1 \\
-        -b 8 \\
+        -b 18 -c 1 \\
         -d \$LOCAL_DB \\
         -q ${supertranscripts_fasta} \\
         --outfmt 6 qseqid qstart qend qlen qframe btop \\
