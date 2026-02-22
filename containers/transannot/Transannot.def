@@ -15,9 +15,9 @@ From: ubuntu:22.04
         xxd \
         && rm -rf /var/lib/apt/lists/*
 
-    # ---------- clone transannot (eggNOG v7 branch) ----------
+    # ---------- clone transannot (main branch, eggNOG v7 + Pfam fix) ----------
     cd /opt
-    git clone --depth 1 --branch update-eggnog-v7 \
+    git clone --depth 1 --branch main \
         --recurse-submodules --shallow-submodules \
         https://github.com/paliocha/transannot.git
 
@@ -44,11 +44,11 @@ From: ubuntu:22.04
 %labels
     Author Martin Paliocha
     Version 4.0.0-eggnog7
-    Description TransAnnot built from paliocha/transannot update-eggnog-v7 branch with eggNOG v7 annotation support
+    Description TransAnnot built from paliocha/transannot main branch (eggNOG v7 + Pfam fix)
 
 %help
     TransAnnot — fast transcriptome annotation pipeline.
-    Built from paliocha/transannot (update-eggnog-v7 branch).
+    Built from paliocha/transannot (main branch, eggNOG v7 + Pfam output fix).
 
     Key change vs upstream v4.0.0:
       - annotate.sh downloads eggNOG 7 protein families file
