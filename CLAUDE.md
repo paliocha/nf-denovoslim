@@ -145,7 +145,7 @@ Pipeline uses `process.scratch = '$TMPDIR'`: Nextflow stages inputs to node-loca
 
 ### sbatch wrapper & BASH_ENV
 
-Orion's site sbatch wrapper injects `BASH_ENV` → causes infinite recursion for nested sbatch calls. All `run_*.sh` scripts include `unset BASH_ENV` before `nextflow run`.
+Orion's site sbatch wrapper (`/cluster/software/slurm/site/bin/sbatch`) injects `BASH_ENV` pointing to a Slurm env-sourcing script. The script (`slurm_bash_env.sh`) has three recursion guards built in (`ORION_SLURM_ENV_APPLIED`, `_SLURM_BASH_ENV_SOURCED`, and `unset BASH_ENV` at the end), so no manual `unset BASH_ENV` is needed in run scripts.
 
 ## Known Gotchas
 
