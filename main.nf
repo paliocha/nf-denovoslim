@@ -64,15 +64,11 @@ params.diamond_db          = null          // required
 params.unix_group          = null
 params.orion_exclude_nodes = null          // e.g. 'cn-37'
 
-// Search sensitivity
-params.mmseqs2_search_sens = 7.0
+// Taxonomy filter — see nextflow.config for filter_taxon default (33090)
 
-// Taxonomy filter (NCBI taxon ID — keeps this taxon and all descendants)
-params.filter_taxon        = 33090         // Viridiplantae
+// TD2 ORF prediction — see nextflow.config for td2_min_orf_length / td2_strand_specific
 
-// TD2 ORF prediction
-params.td2_min_orf_length  = 90
-params.td2_strand_specific = true
+// Search sensitivity — see nextflow.config for mmseqs2_search_sens default (7.0)
 
 // Output
 params.outdir              = './results'
