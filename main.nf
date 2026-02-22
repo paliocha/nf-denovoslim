@@ -30,53 +30,52 @@ include { BUSCO as BUSCO_QC                } from './modules/busco'
 include { TRANSANNOT                       } from './modules/transannot'
 include { THINNING_REPORT                  } from './modules/thinning_report'
 
-// --- Typed pipeline parameters (Nextflow ≥25.10, strict syntax) ---
+// --- Pipeline parameters ---
+// Required params (no default) must be supplied via --param on the CLI or a params file.
 
-params {
-    // --- Input (required — no default) ---
-    trinity_fasta:       Path
-    samplesheet:         Path
-    species_label:       String  = 'species_X'
+// Input
+params.trinity_fasta       = null          // required
+params.samplesheet         = null          // required
+params.species_label       = 'species_X'
 
-    // --- SortMeRNA rRNA databases ---
-    sortmerna_db_urls:   List    = [
-        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/rfam-5.8s-database-id98.fasta',
-        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/rfam-5s-database-id98.fasta',
-        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-arc-16s-id95.fasta',
-        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-arc-23s-id98.fasta',
-        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-bac-16s-id90.fasta',
-        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-bac-23s-id98.fasta',
-        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-euk-18s-id95.fasta',
-        'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-euk-28s-id98.fasta'
-    ]
-    sortmerna_db_dir:    String? = null   // Pre-downloaded dir; if null, downloads from URLs
+// SortMeRNA rRNA databases
+params.sortmerna_db_urls   = [
+    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/rfam-5.8s-database-id98.fasta',
+    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/rfam-5s-database-id98.fasta',
+    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-arc-16s-id95.fasta',
+    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-arc-23s-id98.fasta',
+    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-bac-16s-id90.fasta',
+    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-bac-23s-id98.fasta',
+    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-euk-18s-id95.fasta',
+    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-euk-28s-id98.fasta'
+]
+params.sortmerna_db_dir    = null          // optional: pre-downloaded local dir
 
-    // --- Databases (pre-built MMseqs2 — set via CLI or site config) ---
-    mmseqs2_swissprot:   Path
-    mmseqs2_pfam:        Path
-    mmseqs2_eggnog:      Path
-    mmseqs2_taxonomy_db: Path
-    eggnog_annotations:  Path
-    busco_lineage:       String              // e.g. 'poales_odb12', 'eudicots_odb12'
-    diamond_db:          Path
+// Databases (required — pre-built before pipeline run)
+params.mmseqs2_swissprot   = null          // required
+params.mmseqs2_pfam        = null          // required
+params.mmseqs2_eggnog      = null          // required
+params.mmseqs2_taxonomy_db = null          // required
+params.eggnog_annotations  = null          // required
+params.busco_lineage       = null          // required  e.g. 'poales_odb12'
+params.diamond_db          = null          // required
 
-    // --- Cluster (optional) ---
-    unix_group:          String? = null
-    orion_exclude_nodes: String? = null      // e.g. 'cn-37' (Orion-specific)
+// Cluster (optional)
+params.unix_group          = null
+params.orion_exclude_nodes = null          // e.g. 'cn-37'
 
-    // --- Search params ---
-    mmseqs2_search_sens: Float   = 7.0
+// Search sensitivity
+params.mmseqs2_search_sens = 7.0
 
-    // --- Taxonomy filter (NCBI taxon ID — includes all descendants) ---
-    filter_taxon:        Integer = 33090     // Viridiplantae (green plants)
+// Taxonomy filter (NCBI taxon ID — keeps this taxon and all descendants)
+params.filter_taxon        = 33090         // Viridiplantae
 
-    // --- TD2 params ---
-    td2_min_orf_length:  Integer = 90
-    td2_strand_specific: Boolean = true
+// TD2 ORF prediction
+params.td2_min_orf_length  = 90
+params.td2_strand_specific = true
 
-    // --- Output ---
-    outdir:              String  = './results'
-}
+// Output
+params.outdir              = './results'
 
 // --- Main workflow ---
 
@@ -277,55 +276,14 @@ workflow {
 
     // -- Published outputs (structure matches README § Output) --
 
-    publish:
-    clustering_clusters = CORSET.out.clust
-    clustering_counts   = CORSET.out.counts
-    supertranscripts    = LACE.out.fasta
-    taxonomy_fasta      = MMSEQS2_TAXONOMY.out.fasta
-    taxonomy_lca        = MMSEQS2_TAXONOMY.out.lca_tsv
-    taxonomy_stats      = MMSEQS2_TAXONOMY.out.stats
-    taxonomy_breakdown  = MMSEQS2_TAXONOMY.out.breakdown
-    frameshift_stats    = CORRECT_FRAMESHIFTS.out.stats
-    search_swissprot    = MMSEQS2_SEARCH_SWISSPROT.out.m8
-    search_pfam         = MMSEQS2_SEARCH_PFAM.out.m8
-    proteome            = SELECT_BEST_ORF.out.faa
-    best_orf_gff3       = SELECT_BEST_ORF.out.gff3
-    orf_gene_map        = SELECT_BEST_ORF.out.map
-    salmon_quant        = SALMON_QUANT_FINAL.out.quant_dir
-    busco_trinity       = BUSCO_TRINITY.out.outdir
-    busco_qc            = BUSCO_QC.out.outdir
-    transannot          = TRANSANNOT.out.annotation
-    thinning_report     = THINNING_REPORT.out.report
+}
 
-    onComplete:
+// Output publishing is handled by publishDir in conf/base.config.
+
+workflow.onComplete {
     log.info ""
     log.info "Pipeline completed: ${workflow.success ? 'SUCCESS' : 'FAILED'}"
     log.info "Duration          : ${workflow.duration}"
     log.info "Output dir        : ${params.outdir}"
     log.info ""
-}
-
-// -- Workflow output definitions (Nextflow ≥25.10) --
-// Maps published channels to output directory structure.
-// Default outputDir is params.outdir (see nextflow.config).
-
-output {
-    clustering_clusters { path 'clustering' }
-    clustering_counts   { path 'clustering' }
-    supertranscripts    { path 'supertranscripts' }
-    taxonomy_fasta      { path 'taxonomy' }
-    taxonomy_lca        { path 'taxonomy' }
-    taxonomy_stats      { path 'taxonomy' }
-    taxonomy_breakdown  { path 'taxonomy' }
-    frameshift_stats    { path 'frameshift_correction' }
-    search_swissprot    { path 'mmseqs2_search' }
-    search_pfam         { path 'mmseqs2_search' }
-    proteome            { path 'proteins' }
-    best_orf_gff3       { path 'annotation' }
-    orf_gene_map        { path 'annotation' }
-    salmon_quant        { path 'salmon_final' }
-    busco_trinity       { path 'qc' }
-    busco_qc            { path 'qc' }
-    transannot          { path 'transannot' }
-    thinning_report     { path '.' }
 }
