@@ -28,6 +28,33 @@ Key parameter choices:
 - **ORF filter (`--orf-filter 1`, sensitivity 2)** — before the main `-s 7.0` search, a fast low-sensitivity pre-screen discards ORFs with no detectable homology, reducing the query set from millions of short ORFs to only those with plausible hits. This dramatically cuts runtime without affecting the final taxonomy assignments.
 - **UniRef50 (not UniRef90)** — 60M clusters vs 300M+ sequences. UniRef50 provides sufficient taxonomic resolution for kingdom-level filtering while fitting in ~500 GB RAM and running 3–4× faster than UniRef90.
 
+### ORF prediction tuning
+
+Step 6 uses [TD2](https://github.com/Sommer-lab/TD2) (TransDecoder2) for ORF prediction. Two sub-steps interact:
+
+1. **TD2.LongOrfs** extracts candidate ORFs above a minimum length.
+2. **TD2.Predict** scores candidates with [PSAURON](https://github.com/Sommer-lab/PSAURON) (deep-learning coding potential) and rescues borderline ORFs that have database homology (SwissProt/Pfam hits via `--retain-mmseqs-hits`).
+
+In *de novo* transcriptome assemblies the median SuperTranscript is often short (~620 nt for FPRA). A flat minimum ORF length of 90 aa (270 nt) discards legitimate short proteins from short transcripts. TD2 v1.0.8 provides **length-scaling** parameters to address this:
+
+| Parameter | Flag | Description |
+|-----------|------|-------------|
+| `-m` | `--min-length` | Minimum ORF length (aa) for long transcripts |
+| `-M` | `--absolute-min-length` | Absolute minimum ORF length (aa) for short transcripts |
+| `-L` | `--length-scale` | Accept a short ORF if it covers ≥ this fraction of the transcript length |
+
+The decision logic is: **accept ORF if** `len ≥ -m` **OR** (`len ≥ -M` **AND** `len / transcript_len ≥ -L`). Setting `-M` without `-L` has no effect — both must be specified together.
+
+The pipeline ships three TD2 tuning strategies:
+
+| Strategy | `-m` | `-M` | `-L` | FDR | Use case |
+|----------|-----:|-----:|-----:|----:|----------|
+| **Conservative** | 90 | 70 | 0.7 | 0.05 | Reference-quality assemblies with long N50. Minimises false-positive ORFs at the cost of losing short proteins. |
+| **Standard** (default) | 90 | 50 | 0.5 | 0.10 | Fragmented *de novo* assemblies (median ~500–800 nt). Recovers short proteins proportional to transcript length while filtering noise from longer sequences. |
+| **Aggressive** | 90 | 30 | 0.4 | 0.10 | Highly fragmented assemblies or when maximising sensitivity matters more than precision. Recovers very short ORFs (≥30 aa / 90 nt) at the cost of more false positives passing to TD2.Predict. |
+
+Currently these are set via individual parameters (`--td2_min_orf_length`, `--td2_abs_min_orf`, `--td2_length_scale`). A `--td2_strategy` convenience flag is planned (see [TODO](#todo)).
+
 ### Dual BUSCO assessment
 
 The pipeline runs BUSCO twice to measure deduplication effectiveness:
@@ -130,7 +157,9 @@ Combine as needed: `-profile apptainer,orion` or `-profile apptainer,slurm,highm
 | `--busco_lineage` | required | BUSCO lineage (e.g. `poales_odb12`) |
 | `--filter_taxon` | `33090` | NCBI taxon ID to keep (Viridiplantae) |
 | `--mmseqs2_search_sens` | `7.0` | MMseqs2 `-s` sensitivity |
-| `--td2_min_orf_length` | `90` | Minimum ORF length (aa) |
+| `--td2_min_orf_length` | `90` | Min ORF length (aa) for long transcripts (`-m`) |
+| `--td2_abs_min_orf` | `50` | Absolute min ORF length (aa) for short transcripts (`-M`) |
+| `--td2_length_scale` | `0.5` | Accept short ORF if it covers ≥ this fraction of transcript (`-L`) |
 | `--td2_strand_specific` | `true` | TD2 strand-specific mode |
 | `--sortmerna_db_dir` | `null` | Pre-downloaded rRNA DB dir |
 | `--unix_group` | `null` | Unix group for quota accounting |
@@ -227,6 +256,10 @@ dds <- DESeqDataSetFromTximport(txi, colData = samples, design = ~ condition)
 ```
 
 The Corset transcript-to-gene map is at `results/clustering/corset-clusters.txt` if transcript-level import is needed.
+
+## TODO
+
+- [ ] Add `--td2_strategy {conservative,standard,aggressive}` convenience parameter that sets `-m`/`-M`/`-L`/FDR as a single flag, overriding individual params when specified
 
 ## Author
 
