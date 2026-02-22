@@ -22,18 +22,20 @@ process DIAMOND_BLASTX {
     LOCAL_DB=./\$(basename "${diamond_db}")
 
     # Run Diamond blastx with frameshift-tolerant alignment
+    # --iterate is incompatible with -F (frameshift): iterate's non-linear steps
+    # (default, sensitive) use full matrix extension which -F does not support.
     diamond blastx \\
         -F 15 \\
-        --iterate --sensitive \
-        --strand plus \
-        --top 1 \
-        --min-score 50 \
-        -b 4 -c 1 \
-        -d \$LOCAL_DB \
-        -q ${supertranscripts_fasta} \
-        --outfmt 6 qseqid qstart qend qlen qframe btop \
-        -p ${task.cpus} \
-        --tmpdir . \
+        --sensitive \\
+        --strand plus \\
+        --top 1 \\
+        --min-score 50 \\
+        -b 4 -c 1 \\
+        -d \$LOCAL_DB \\
+        -q ${supertranscripts_fasta} \\
+        --outfmt 6 qseqid qstart qend qlen qframe btop \\
+        -p ${task.cpus} \\
+        --tmpdir . \\
         -o diamond_frameshift.tsv
     """
 }

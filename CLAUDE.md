@@ -155,8 +155,7 @@ Orion's site sbatch wrapper (`/cluster/software/slurm/site/bin/sbatch`) injects 
 4. **Sample naming** — `{SPECIES}{ID}_{Timepoint}_{Tissue}`. Non-standard names need explicit `condition` column in samplesheet
 5. **Frameshift correction uses two containers** — Diamond (blastx) then BioPython (correction script)
 6. **No dedup before Corset** — the pipeline deliberately skips nucleotide deduplication; deduping before Corset destroys multi-mapping signal and produces singleton clusters
-7. **DIAMOND `-g` incompatible with `-F`** — global ranking (`-g N`) is not
-   supported in frameshift alignment mode (`-F 15`). Diamond's 3-frame DP
-   extension cannot be slotted into the global-ranking pipeline. Performance
-   is instead handled by `--iterate --sensitive` (early exit for easy queries)
-   and `--top 1` (limits gapped extensions to near-best targets).
+7. **DIAMOND flags incompatible with `-F` (frameshift mode)** — two flags break `-F 15`:
+   - `-g N` (global ranking): Diamond's ungapped-score ranking cannot be slotted into the 3-frame DP extension pipeline.
+   - `--iterate`: runs a sequence of sensitivity steps; the final steps (`default`, `sensitive`) use full matrix extension which `-F` does not support. Error: `Frameshift alignment does not support full matrix extension`.
+   Use `--sensitive` directly (not `--iterate --sensitive`). Performance is controlled by `--top 1` (limits gapped extensions to near-best targets).
