@@ -11,8 +11,9 @@ process BUSCO {
     val(suffix)
 
     output:
-    path("busco_${suffix}"),              emit: outdir
-    path("busco_${suffix}/short_summary*"), emit: summary
+    path("busco_${suffix}"),                   emit: outdir
+    path("busco_${suffix}/short_summary*.txt"), emit: summary
+    path("busco_${suffix}/short_summary*"),     emit: summary_all
 
     script:
     def args = task.ext.args ?: ''

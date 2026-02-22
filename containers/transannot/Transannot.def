@@ -1,0 +1,61 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        curl \
+        ca-certificates \
+        zlib1g-dev \
+        libbz2-dev \
+        xxd \
+        && rm -rf /var/lib/apt/lists/*
+
+    # ---------- clone transannot (eggNOG v7 branch) ----------
+    cd /opt
+    git clone --depth 1 --branch update-eggnog-v7 \
+        --recurse-submodules --shallow-submodules \
+        https://github.com/paliocha/transannot.git
+
+    # ---------- build transannot ----------
+    cd /opt/transannot
+    mkdir -p build && cd build
+    cmake -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DHAVE_SSE4_1=1 \
+          -DHAVE_AVX2=1 \
+          ..
+    make -j$(nproc)
+    make install
+
+    # ---------- cleanup ----------
+    rm -rf /opt/transannot /var/lib/apt/lists/*
+
+%environment
+    export PATH="/usr/local/bin:${PATH}"
+
+%runscript
+    exec transannot "$@"
+
+%labels
+    Author Martin Paliocha
+    Version 4.0.0-eggnog7
+    Description TransAnnot built from paliocha/transannot update-eggnog-v7 branch with eggNOG v7 annotation support
+
+%help
+    TransAnnot — fast transcriptome annotation pipeline.
+    Built from paliocha/transannot (update-eggnog-v7 branch).
+
+    Key change vs upstream v4.0.0:
+      - annotate.sh downloads eggNOG 7 protein families file
+        (e7.protein_families.tsv.gz) instead of eggNOG 5 annotations
+      - AWK join normalizes pipe|hyphen in OG family names
+      - Strips .faa.gz suffix from profile DB headers before matching
+
+    Usage:
+      transannot createquerydb input.faa queryDB tmp
+      transannot annotate queryDB pfamDB eggNOGDB swissprotDB out.tsv tmp --threads 16

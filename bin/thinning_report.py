@@ -37,14 +37,22 @@ def parse_sortmerna_log(path):
     """Parse a SortMeRNA v4 log file.
 
     Returns dict with keys: total, rrna, non_rrna, pct_rrna (or None on failure).
-    SortMeRNA v4 logs contain lines like:
-        Total reads = 12345678
-        Total reads passing E-value threshold = 678901 (5.50%)
-        Total reads failing E-value threshold = 11666777 (94.50%)
+
+    Handles two formats:
+      1. Summary format (non-verbose):
+           Total reads = 12345678
+           Total reads passing E-value threshold = 678901 (5.50%)
+           Total reads failing E-value threshold = 11666777 (94.50%)
+      2. Verbose (-v) format:
+           [count_reads:945] done count. ... Total reads: 64536010
+           [align2:133] Processor N ... Aligned reads (passing E-value): M
     """
     result = {}
+    v_total = None
+    v_aligned_sum = 0
     with open(path) as f:
         for line in f:
+            # --- Summary format (non-verbose) ---
             m = re.search(r'Total reads = (\d+)', line)
             if m and 'passing' not in line and 'failing' not in line:
                 result['total'] = int(m.group(1))
@@ -54,9 +62,28 @@ def parse_sortmerna_log(path):
             m = re.search(r'Total reads failing E-value threshold = (\d+)', line)
             if m:
                 result['non_rrna'] = int(m.group(1))
+            # --- Verbose format ---
+            m = re.search(r'\[count_reads:\d+\] done count\..+Total reads: (\d+)', line)
+            if m:
+                v_total = int(m.group(1))
+            m = re.search(
+                r'\[align2:\d+\] Processor \d+.*Aligned reads \(passing E-value\): (\d+)',
+                line,
+            )
+            if m:
+                v_aligned_sum += int(m.group(1))
+    # Prefer summary format if available
     if 'total' in result and 'rrna' in result:
         result['pct_rrna'] = result['rrna'] / result['total'] * 100 if result['total'] > 0 else 0.0
-    return result if 'total' in result else None
+        return result
+    # Fall back to verbose format
+    if v_total is not None and v_total > 0:
+        result['total'] = v_total
+        result['rrna'] = v_aligned_sum
+        result['non_rrna'] = v_total - v_aligned_sum
+        result['pct_rrna'] = v_aligned_sum / v_total * 100
+        return result
+    return None
 
 
 def parse_quant_sf(path):

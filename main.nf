@@ -56,7 +56,6 @@ params.mmseqs2_swissprot   = null          // required
 params.mmseqs2_pfam        = null          // required
 params.mmseqs2_eggnog      = null          // required
 params.mmseqs2_taxonomy_db = null          // required
-params.eggnog_annotations  = null          // required
 params.busco_lineage       = null          // required  e.g. 'poales_odb12'
 params.diamond_db          = null          // required
 
@@ -245,7 +244,6 @@ workflow {
 
     TRANSANNOT(
         SELECT_BEST_ORF.out.faa,
-        file(params.eggnog_annotations, checkIfExists: true),
         params.species_label,
         params.mmseqs2_pfam,
         params.mmseqs2_eggnog,
@@ -262,8 +260,8 @@ workflow {
         SELECT_BEST_ORF.out.faa,
         SALMON_QUANT_INITIAL.out.quant_dir.collect(),
         SALMON_QUANT_FINAL.out.quant_dir.collect(),
-        BUSCO_TRINITY.out.outdir,
-        BUSCO_QC.out.outdir,
+        BUSCO_TRINITY.out.summary,
+        BUSCO_QC.out.summary,
         VALIDATE_IDS.out.report,
         SORTMERNA.out.log.map { _sample_id, logfile -> logfile }.collect(),
         MMSEQS2_TAXONOMY.out.breakdown,
