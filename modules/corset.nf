@@ -31,6 +31,8 @@ process CORSET {
 
     corset \\
         -i salmon_eq_classes \\
+        --algorithm leiden \\
+        --knn auto \\
         -g ${groups} \\
         -n ${names} \\
         -p corset \\

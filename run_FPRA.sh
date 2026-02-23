@@ -38,6 +38,7 @@ nextflow run $PIPELINE_DIR/main.nf \
     --mmseqs2_taxonomy_db $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/UniRef50taxdb \
     --diamond_db $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/uniref50.dmnd \
     --eggnog_annotations $PROJECTS/glowberry/transannot/db/e7_as_e5_annotations.tsv \
+    --td2_strategy aggressive \
     --busco_lineage poales_odb12 \
     --filter_taxon 33090 \
     --unix_group fjellheimlab \
