@@ -7,10 +7,20 @@ From: ubuntu:24.04
     License Academic — requires manual download from topaz.gatech.edu
 
 %files
-    # Copy the extracted GeneMarkS-T directory into the image.
-    # Before building, download from http://topaz.gatech.edu/GeneMark/license_download.cgi
-    # and extract gmst_linux_64.tar.gz so that gmst.pl sits in this directory.
-    gmst.pl /opt/gmst/gmst.pl
+    # All files extracted from gmst_linux_64.tar.gz + license key
+    gmst.pl        /opt/gmst/gmst.pl
+    gmhmmp         /opt/gmst/gmhmmp
+    probuild       /opt/gmst/probuild
+    Gibbs3         /opt/gmst/Gibbs3
+    GeneMark_hmm.mod      /opt/gmst/GeneMark_hmm.mod
+    MetaGeneMark_v1.mod   /opt/gmst/MetaGeneMark_v1.mod
+    gm_1.tbl       /opt/gmst/gm_1.tbl
+    gm_4.tbl       /opt/gmst/gm_4.tbl
+    par_1.default  /opt/gmst/par_1.default
+    par_4.default  /opt/gmst/par_4.default
+    par_11.default /opt/gmst/par_11.default
+    par_EST.default /opt/gmst/par_EST.default
+    gm_key_64      /opt/gmst/.gm_key
 
 %post
     export DEBIAN_FRONTEND=noninteractive
@@ -22,7 +32,13 @@ From: ubuntu:24.04
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-    chmod +x /opt/gmst/gmst.pl
+    chmod +x /opt/gmst/gmst.pl /opt/gmst/gmhmmp /opt/gmst/probuild /opt/gmst/Gibbs3
+
+    # GeneMark tools look for the license key in $HOME/.gm_key
+    # Copy to both /root and /etc/skel so it works regardless of $HOME
+    cp /opt/gmst/.gm_key /root/.gm_key
+    mkdir -p /etc/skel
+    cp /opt/gmst/.gm_key /etc/skel/.gm_key
 
 %environment
     export PATH="/opt/gmst:${PATH}"
@@ -32,5 +48,6 @@ From: ubuntu:24.04
     exec gmst.pl "$@"
 
 %test
+    # gmst.pl prints usage to stderr with exit 1 — just verify it runs
     gmst.pl 2>&1 | head -1 || true
     python3 --version
