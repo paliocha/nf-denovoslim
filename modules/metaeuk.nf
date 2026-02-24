@@ -13,8 +13,7 @@ process METAEUK_PREDICT {
     val(species_label)
 
     output:
-    path("metaeuk_best.faa"),  emit: faa
-    path("metaeuk_map.tsv"),   emit: map
+    path("metaeuk_out.fas"),   emit: fas
     path("metaeuk_raw.gff"),   emit: gff
 
     script:
@@ -43,8 +42,28 @@ process METAEUK_PREDICT {
 
     # Copy GFF before post-processing
     cp metaeuk_out.gff metaeuk_raw.gff
+    """
+}
 
-    # Select best protein per gene (highest score → lowest evalue → longest)
-    metaeuk_select_best.py metaeuk_out.fas metaeuk_best.faa metaeuk_map.tsv
+/*
+ * METAEUK_SELECT_BEST — pick best MetaEuk protein per gene
+ * Runs in a Python-capable container (biopython) since the MetaEuk
+ * biocontainer has no Python.
+ */
+
+process METAEUK_SELECT_BEST {
+    tag "${species_label}"
+
+    input:
+    path(fas)
+    val(species_label)
+
+    output:
+    path("metaeuk_best.faa"),  emit: faa
+    path("metaeuk_map.tsv"),   emit: map
+
+    script:
+    """
+    metaeuk_select_best.py ${fas} metaeuk_best.faa metaeuk_map.tsv
     """
 }

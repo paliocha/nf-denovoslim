@@ -27,6 +27,7 @@ include { MMSEQS2_SEARCH as MMSEQS2_SEARCH_PFAM      } from './modules/mmseqs2_s
 include { TD2_PREDICT                      } from './modules/td2_predict'
 include { SELECT_BEST_ORF                  } from './modules/select_best_orf'
 include { METAEUK_PREDICT                  } from './modules/metaeuk'
+include { METAEUK_SELECT_BEST              } from './modules/metaeuk'
 include { PSAURON_METAEUK                  } from './modules/psauron_metaeuk'
 include { GMST_PREDICT                     } from './modules/gmst'
 include { PSAURON_GMST                     } from './modules/psauron_gmst'
@@ -193,7 +194,9 @@ workflow {
         params.species_label
     )
 
-    PSAURON_METAEUK(METAEUK_PREDICT.out.faa, params.species_label)
+    METAEUK_SELECT_BEST(METAEUK_PREDICT.out.fas, params.species_label)
+
+    PSAURON_METAEUK(METAEUK_SELECT_BEST.out.faa, params.species_label)
 
     // -- GeneMarkS-T ORF prediction (parallel to TD2 + MetaEuk) --
 
@@ -205,8 +208,8 @@ workflow {
     MERGE_PREDICTIONS(
         SELECT_BEST_ORF.out.faa,
         SELECT_BEST_ORF.out.map,
-        METAEUK_PREDICT.out.faa,
-        METAEUK_PREDICT.out.map,
+        METAEUK_SELECT_BEST.out.faa,
+        METAEUK_SELECT_BEST.out.map,
         PSAURON_METAEUK.out.scores,
         GMST_PREDICT.out.faa,
         GMST_PREDICT.out.map,
