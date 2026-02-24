@@ -34,7 +34,7 @@ process VALIDATE_IDS {
     {
         echo "Genes with protein: \$(wc -l < ids_faa.txt)"
         echo "Genes without ORF (non-coding/fragmented): \${NO_ORF}"
-        echo "Total SuperTranscript genes: \$(wc -l < ids_salmon.txt)"
+        echo "Total representative genes: \$(wc -l < ids_salmon.txt)"
     } | tee id_validation.txt
     """
 }

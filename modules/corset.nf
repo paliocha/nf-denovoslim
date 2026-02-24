@@ -28,11 +28,14 @@ process CORSET {
     done
 
     export OMP_NUM_THREADS=${task.cpus}
+    export OMP_PROC_BIND=close
+    export OMP_PLACES=cores
 
     corset \\
         -i salmon_eq_classes \\
         --algorithm leiden \\
         --knn auto \\
+        -l 2 \\
         -g ${groups} \\
         -n ${names} \\
         -p corset \\

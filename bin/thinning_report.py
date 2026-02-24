@@ -2,18 +2,21 @@
 """Generate a thinning/slimming summary report.
 
 Usage:
-    thinning_report.py <species_label> \\
-        <trinity_fasta> <supertranscripts_fasta> \\
-        <grouper_clust> <orf_to_gene_map> <faa> \\
-        <initial_quant_dirs> <final_quant_dirs> \\
-        <busco_trinity_summary> <busco_final_summary> \\
-        <id_validation> <sortmerna_logs> <taxonomy_breakdown> \\
-        <transannot_tsv>
+    thinning_report.py --species BMAX --trinity trinity.fasta \\
+        --representatives reps.fasta --clusters corset.clust \\
+        --merge-map map.tsv --faa proteins.faa \\
+        --initial-quants dir1,dir2 --final-quants dir1,dir2 \\
+        --busco-trinity short_summary.txt --busco-final short_summary.txt \\
+        --id-validation report.txt [--sortmerna-logs log1,log2] \\
+        [--taxonomy breakdown.tsv] [--transannot annot.tsv] \\
+        [--merge-stats stats.txt] [--dedup-stats stats.txt] \\
+        [--protein-dedup-stats stats.txt]
 
 Outputs:
-    {species_label}_thinning_report.txt
+    {species}_thinning_report.txt
 """
 
+import argparse
 import csv
 import os
 import re
@@ -127,31 +130,63 @@ def fmt(number):
 
 
 def main():
-    if len(sys.argv) < 13:
-        print(f"Usage: {sys.argv[0]} <species_label> <trinity.fasta> "
-              f"<supertranscripts.fasta> <grouper_clust> <orf_map> <faa> "
-              f"<initial_quant_dirs> <final_quant_dirs> <busco_trinity_summary> "
-              f"<busco_final_summary> <id_validation> [sortmerna_logs] "
-              f"[taxonomy_breakdown]",
-              file=sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description='Generate nf-denovoslim thinning report')
+    parser.add_argument('--species', required=True,
+                        help='Species label (e.g. BMAX)')
+    parser.add_argument('--trinity', required=True,
+                        help='Trinity FASTA')
+    parser.add_argument('--representatives', required=True,
+                        help='Representative sequences FASTA')
+    parser.add_argument('--clusters', required=True,
+                        help='Corset cluster file')
+    parser.add_argument('--merge-map', required=True,
+                        help='Merge prediction map TSV')
+    parser.add_argument('--faa', required=True,
+                        help='Final protein FASTA')
+    parser.add_argument('--initial-quants', required=True,
+                        help='Comma-separated initial quant dirs')
+    parser.add_argument('--final-quants', required=True,
+                        help='Comma-separated final quant dirs')
+    parser.add_argument('--busco-trinity', required=True,
+                        help='BUSCO Trinity summary file')
+    parser.add_argument('--busco-final', required=True,
+                        help='BUSCO final summary file')
+    parser.add_argument('--id-validation', required=True,
+                        help='ID validation report')
+    parser.add_argument('--sortmerna-logs', default='',
+                        help='Comma-separated SortMeRNA log files')
+    parser.add_argument('--taxonomy', default='',
+                        help='Taxonomy breakdown TSV')
+    parser.add_argument('--transannot', default='',
+                        help='TransAnnot annotation TSV')
+    parser.add_argument('--merge-stats', default='',
+                        help='Merge statistics text file')
+    parser.add_argument('--dedup-stats', default='',
+                        help='Nucleotide dedup statistics text file')
+    parser.add_argument('--protein-dedup-stats', default='',
+                        help='Protein dedup statistics text file')
+    args = parser.parse_args()
 
-    species       = sys.argv[1]
-    trinity_fasta = sys.argv[2]
-    st_fasta      = sys.argv[3]
-    grouper_clust = sys.argv[4]
-    orf_map       = sys.argv[5]
-    faa_file      = sys.argv[6]
-    initial_qdir  = sys.argv[7]   # comma-separated list of dirs
-    final_qdir    = sys.argv[8]   # comma-separated list of dirs
-    busco_trinity = sys.argv[9]
-    busco_final   = sys.argv[10]
-    id_validation = sys.argv[11]
-    sortmerna_arg = sys.argv[12] if len(sys.argv) > 12 else ""
-    taxonomy_arg  = sys.argv[13] if len(sys.argv) > 13 else ""
-    annot_arg     = sys.argv[14] if len(sys.argv) > 14 else ""
+    species       = args.species
+    trinity_fasta = args.trinity
+    rep_fasta     = args.representatives
+    grouper_clust = args.clusters
+    merge_map     = args.merge_map
+    faa_file      = args.faa
+    initial_qdir  = args.initial_quants
+    final_qdir    = args.final_quants
+    busco_trinity = args.busco_trinity
+    busco_final   = args.busco_final
+    id_validation = args.id_validation
+    sortmerna_arg = args.sortmerna_logs
+    taxonomy_arg  = args.taxonomy
+    annot_arg     = args.transannot
+    merge_stats   = args.merge_stats
+    dedup_stats   = args.dedup_stats
+    protein_dedup_stats_arg = args.protein_dedup_stats
 
-    # ── SortMeRNA rRNA removal stats ───────────────────────────────────
+    # -- SortMeRNA rRNA removal stats --
 
     sortmerna_stats = []
     if sortmerna_arg:
@@ -163,7 +198,7 @@ def main():
                     parsed['sample'] = os.path.basename(os.path.dirname(logpath)) or logpath
                     sortmerna_stats.append(parsed)
 
-    # ── Taxonomy breakdown ───────────────────────────────────────────────
+    # -- Taxonomy breakdown --
 
     taxonomy_rows = []
     if taxonomy_arg and os.path.isfile(taxonomy_arg):
@@ -179,16 +214,15 @@ def main():
                         'status': parts[3],
                     })
 
-    # ── TransAnnot functional annotation ─────────────────────────────────
+    # -- TransAnnot functional annotation --
 
-    # Per-protein sets of DBs that produced a hit; also collect top Pfam domains
-    annot_by_protein = defaultdict(set)   # queryID -> {db_name, ...}
-    pfam_counts = defaultdict(int)        # Pfam target description -> count
+    annot_by_protein = defaultdict(set)
+    pfam_counts = defaultdict(int)
     if annot_arg and os.path.isfile(annot_arg):
         with open(annot_arg) as f:
             for line in f:
                 if line.startswith("queryID"):
-                    continue  # skip header
+                    continue
                 parts = line.strip().split("\t")
                 if len(parts) >= 10:
                     query_id = parts[0]
@@ -196,21 +230,41 @@ def main():
                     db_name = parts[9].strip()
                     annot_by_protein[query_id].add(db_name)
                     if 'pfam' in db_name.lower():
-                        # Use first word of description as Pfam family
                         pfam_fam = target_desc.split()[0] if target_desc else 'unknown'
                         pfam_counts[pfam_fam] += 1
 
-    # ── Sequence counts and lengths ──────────────────────────────────────
+    # -- Merge stats (pre-formatted text) --
+
+    merge_stats_text = ""
+    if merge_stats and os.path.isfile(merge_stats):
+        with open(merge_stats) as f:
+            merge_stats_text = f.read().strip()
+
+    # -- Dedup stats (pre-formatted text) --
+
+    dedup_stats_text = ""
+    if dedup_stats and os.path.isfile(dedup_stats):
+        with open(dedup_stats) as f:
+            dedup_stats_text = f.read().strip()
+
+    # -- Protein dedup stats (pre-formatted text) --
+
+    protein_dedup_stats_text = ""
+    if protein_dedup_stats_arg and os.path.isfile(protein_dedup_stats_arg):
+        with open(protein_dedup_stats_arg) as f:
+            protein_dedup_stats_text = f.read().strip()
+
+    # -- Sequence counts and lengths --
 
     trinity_lengths  = count_fasta(trinity_fasta)
-    st_lengths       = count_fasta(st_fasta)
+    rep_lengths      = count_fasta(rep_fasta)
     protein_lengths  = count_fasta(faa_file)
 
     n_trinity  = len(trinity_lengths)
-    n_genes    = len(st_lengths)
+    n_reps     = len(rep_lengths)
     n_proteins = len(protein_lengths)
 
-    # ── Grouper cluster stats ────────────────────────────────────────────
+    # -- Grouper cluster stats --
 
     cluster_sizes = defaultdict(int)
     with open(grouper_clust) as f:
@@ -220,38 +274,86 @@ def main():
                 cluster_sizes[parts[1]] += 1
     cluster_counts = list(cluster_sizes.values())
 
-    # ── ORF map stats ────────────────────────────────────────────────────
+    # -- Merge map stats (TD2 + MetaEuk breakdown) --
 
-    psauron_scores = []
-    orf_lengths = []
-    with open(orf_map) as f:
-        header = f.readline()
-        for line in f:
-            parts = line.strip().split("\t")
-            if len(parts) >= 4:
-                psauron_scores.append(float(parts[2]))
-                orf_lengths.append(int(parts[3]))
+    merge_sources = defaultdict(int)
+    merge_psaurons = []
+    merge_lengths = []
+    merge_completeness = defaultdict(int)
+    td2_psaurons = []
+    metaeuk_psaurons = []
+    gmst_psaurons = []
+    td2_lengths = []
+    metaeuk_lengths = []
+    gmst_lengths = []
 
-    # ── Expression stats (initial = transcript-level) ────────────────────
+    if os.path.isfile(merge_map):
+        with open(merge_map) as f:
+            header = f.readline()
+            for line in f:
+                parts = line.strip().split("\t")
+                if len(parts) >= 14:  # 3-way format (TD2+MetaEuk+GeneMarkS-T)
+                    source = parts[1]
+                    prot_len = int(parts[2])
+                    psauron = float(parts[3])
+                    compl = parts[4]
+                    td2_len = int(parts[5])
+                    td2_ps = float(parts[6])
+                    met_len = int(parts[8])
+                    met_ps = float(parts[9])
+                    gm_len = int(parts[11])
+                    gm_ps = float(parts[12])
+
+                    merge_sources[source] += 1
+                    merge_psaurons.append(psauron)
+                    merge_lengths.append(prot_len)
+                    merge_completeness[compl] += 1
+
+                    if td2_len > 0:
+                        td2_psaurons.append(td2_ps)
+                        td2_lengths.append(td2_len)
+                    if met_len > 0:
+                        metaeuk_psaurons.append(met_ps)
+                        metaeuk_lengths.append(met_len)
+                    if gm_len > 0:
+                        gmst_psaurons.append(gm_ps)
+                        gmst_lengths.append(gm_len)
+                elif len(parts) >= 8:  # Legacy 2-way format
+                    source = parts[1]
+                    prot_len = int(parts[2])
+                    psauron = float(parts[3])
+                    td2_len = int(parts[4])
+                    td2_ps = float(parts[5])
+                    met_len = int(parts[6])
+                    met_ps = float(parts[7])
+
+                    merge_sources[source] += 1
+                    merge_psaurons.append(psauron)
+                    merge_lengths.append(prot_len)
+
+                    if td2_len > 0:
+                        td2_psaurons.append(td2_ps)
+                        td2_lengths.append(td2_len)
+                    if met_len > 0:
+                        metaeuk_psaurons.append(met_ps)
+                        metaeuk_lengths.append(met_len)
+
+    # -- Expression stats (initial = transcript-level) --
 
     initial_dirs = [d for d in initial_qdir.split(",") if d.strip()]
     init_tpm, init_reads, n_samples_init = aggregate_quants(initial_dirs)
-
-    # Per-transcript mean TPM across samples
     init_mean_tpms = [statistics.mean(v) for v in init_tpm.values() if v]
 
-    # ── Expression stats (final = gene-level SuperTranscripts) ───────────
+    # -- Expression stats (final = gene-level representatives) --
 
     final_dirs = [d for d in final_qdir.split(",") if d.strip()]
     final_tpm, final_reads, n_samples_final = aggregate_quants(final_dirs)
-
     final_mean_tpms = [statistics.mean(v) for v in final_tpm.values() if v]
 
-    # Zero-expression genes (mean TPM == 0 across all samples)
     n_zero_init  = sum(1 for t in init_mean_tpms if t == 0)
     n_zero_final = sum(1 for t in final_mean_tpms if t == 0)
 
-    # ── BUSCO summaries ────────────────────────────────────────────────
+    # -- BUSCO summaries --
 
     busco_trinity_text = ""
     if os.path.isfile(busco_trinity):
@@ -263,14 +365,14 @@ def main():
         with open(busco_final) as f:
             busco_final_text = f.read().strip()
 
-    # ── ID validation ────────────────────────────────────────────────────
+    # -- ID validation --
 
     id_val_text = ""
     if os.path.isfile(id_validation):
         with open(id_validation) as f:
             id_val_text = f.read().strip()
 
-    # ── Write report ─────────────────────────────────────────────────────
+    # -- Write report --
 
     out = f"{species}_thinning_report.txt"
     with open(out, "w") as r:
@@ -304,18 +406,20 @@ def main():
         r.write("2. ASSEMBLY REDUCTION\n")
         r.write("-" * 40 + "\n")
         r.write(f"  Original Trinity transcripts:     {fmt(n_trinity)}\n")
-        r.write(f"  After Corset -> Lace:              {fmt(n_genes)}  "
-                f"({n_genes/n_trinity*100:.1f}% of original)\n")
-        r.write(f"  Genes with predicted ORF:          {fmt(n_proteins)}  "
-                f"({n_proteins/n_genes*100:.1f}% of genes)\n")
-        r.write(f"\n  Overall reduction: {n_trinity} -> {n_genes} "
-                f"({n_trinity/n_genes:.1f}x collapse)\n\n")
+        r.write(f"  Corset clusters (genes):           {fmt(len(cluster_counts))}\n")
+        r.write(f"  Representatives (after dedup):     {fmt(n_reps)}\n")
+        if dedup_stats_text:
+            for line in dedup_stats_text.strip().splitlines():
+                r.write(f"    {line.strip()}\n")
+        r.write(f"  Genes with predicted protein:      {fmt(n_proteins)}  "
+                f"({n_proteins/n_reps*100:.1f}% of representatives)\n")
+        r.write(f"\n  Overall reduction: {n_trinity} -> {n_reps} "
+                f"({n_trinity/n_reps:.1f}x collapse)\n\n")
 
         # --- Section 3: Taxonomy filter ---
         r.write("3. TAXONOMY FILTER (MMseqs2)\n")
         r.write("-" * 40 + "\n")
         if taxonomy_rows:
-            # Find TOTAL row for summary
             total_row = next((row for row in taxonomy_rows if row['category'] == 'TOTAL'), None)
             kept_rows = [row for row in taxonomy_rows if row['status'] == 'KEPT']
             removed_rows = [row for row in taxonomy_rows if row['status'] == 'REMOVED']
@@ -324,14 +428,13 @@ def main():
 
             if total_row:
                 total_count = total_row['count']
-                r.write(f"  SuperTranscripts classified:  {fmt(total_count)}\n")
+                r.write(f"  Representatives classified:   {fmt(total_count)}\n")
                 r.write(f"  Kept (Viridiplantae + no-hit): {fmt(kept_count)}  "
                         f"({kept_count/total_count*100:.1f}%)\n")
                 r.write(f"  Removed (non-plant):           {fmt(removed_count)}  "
                         f"({removed_count/total_count*100:.1f}%)\n")
             r.write("\n")
 
-            # Breakdown table
             cat_width = max(len(row['category']) for row in taxonomy_rows) + 2
             r.write(f"  {'Category':<{cat_width}} {'Count':>10} {'Percent':>10}  Status\n")
             r.write(f"  {'-' * cat_width} {'-' * 10} {'-' * 10}  {'-' * 7}\n")
@@ -350,33 +453,86 @@ def main():
         r.write(f"  {'Stage':<30} {'N':>8} {'Mean':>10} {'Median':>10} "
                 f"{'Min':>8} {'Max':>10}\n")
         for label, lens in [("Trinity transcripts", trinity_lengths),
-                            ("SuperTranscripts", st_lengths)]:
+                            ("Representatives", rep_lengths)]:
             if lens:
                 r.write(f"  {label:<30} {len(lens):>8,} {statistics.mean(lens):>10,.1f} "
                         f"{statistics.median(lens):>10,.1f} "
                         f"{min(lens):>8,} {max(lens):>10,}\n")
-
-        # Length increase from Trinity to SuperTranscripts
-        if trinity_lengths and st_lengths:
-            trinity_median = statistics.median(trinity_lengths)
-            st_median = statistics.median(st_lengths)
-            median_increase = (st_median - trinity_median) / trinity_median * 100
-            r.write(f"\n  Median length increase (Trinity → LACE): "
-                    f"{trinity_median:,.0f} bp → {st_median:,.0f} bp "
-                    f"(+{median_increase:.1f}%, {st_median/trinity_median:.1f}x)\n")
         r.write("\n")
 
-        # --- Section 5: Protein/ORF stats ---
-        r.write("5. PREDICTED PROTEINS\n")
+        # --- Section 5: Predicted proteins ---
+        r.write("5. PREDICTED PROTEINS (TD2 + MetaEuk + GeneMarkS-T merge)\n")
         r.write("-" * 40 + "\n")
-        r.write(f"  Total proteins:      {fmt(n_proteins)}\n")
-        if orf_lengths:
-            r.write(f"  Mean protein length: {statistics.mean(orf_lengths):,.1f} aa\n")
-            r.write(f"  Median protein len:  {statistics.median(orf_lengths):,.1f} aa\n")
-        if psauron_scores:
-            r.write(f"  Mean PSAURON score:  {statistics.mean(psauron_scores):.3f}\n")
-            r.write(f"  Median PSAURON:      {statistics.median(psauron_scores):.3f}\n")
+        r.write(f"  Total merged proteins: {fmt(sum(merge_sources.values()))}\n")
+        r.write(f"  After protein dedup:   {fmt(n_proteins)}\n")
+        if merge_lengths:
+            r.write(f"  Mean protein length:   {statistics.mean(merge_lengths):,.1f} aa\n")
+            r.write(f"  Median protein len:    {statistics.median(merge_lengths):,.1f} aa\n")
+        if merge_psaurons:
+            r.write(f"  Mean PSAURON score:    {statistics.mean(merge_psaurons):.3f}\n")
+            r.write(f"  Median PSAURON:        {statistics.median(merge_psaurons):.3f}\n")
         r.write("\n")
+
+        # Completeness breakdown
+        if merge_completeness:
+            r.write("  Completeness breakdown (best-per-gene):\n")
+            for compl_type in sorted(merge_completeness, key=merge_completeness.get, reverse=True):
+                cnt = merge_completeness[compl_type]
+                total_merged = sum(merge_sources.values())
+                pct = cnt / total_merged * 100 if total_merged > 0 else 0.0
+                r.write(f"    {compl_type:<25} {cnt:>10,}  ({pct:.1f}%)\n")
+            r.write("\n")
+
+        # Source breakdown (all labels from 3-way merge)
+        if merge_sources:
+            r.write("  Prediction source breakdown:\n")
+            total_merged = sum(merge_sources.values())
+            for source in sorted(merge_sources, key=merge_sources.get, reverse=True):
+                cnt = merge_sources[source]
+                pct = cnt / total_merged * 100 if total_merged > 0 else 0.0
+                r.write(f"    {source:<40} {cnt:>10,}  ({pct:.1f}%)\n")
+            r.write("\n")
+
+        # Per-predictor stats (3-way)
+        predictor_data = [
+            ('TD2', td2_lengths, td2_psaurons),
+            ('MetaEuk', metaeuk_lengths, metaeuk_psaurons),
+            ('GeneMarkS-T', gmst_lengths, gmst_psaurons),
+        ]
+        active = [(name, lens, pss) for name, lens, pss in predictor_data if lens]
+        if active:
+            col_w = 14
+            r.write("  Per-predictor statistics:\n")
+            header_line = f"    {'Metric':<30}"
+            for name, _, _ in active:
+                header_line += f" {name:>{col_w}}"
+            r.write(header_line + "\n")
+            for metric, getter in [
+                ('Genes with prediction', lambda L, _: f"{len(L):>,}"),
+                ('Mean protein length (aa)', lambda L, _: f"{statistics.mean(L):>,.1f}" if L else 'N/A'),
+                ('Median protein length', lambda L, _: f"{statistics.median(L):>,.1f}" if L else 'N/A'),
+                ('Mean PSAURON score', lambda _, P: f"{statistics.mean(P):>.3f}" if P else 'N/A'),
+                ('Median PSAURON', lambda _, P: f"{statistics.median(P):>.3f}" if P else 'N/A'),
+            ]:
+                row_line = f"    {metric:<30}"
+                for _, lens, pss in active:
+                    row_line += f" {getter(lens, pss):>{col_w}}"
+                r.write(row_line + "\n")
+        r.write("\n")
+
+        # Protein dedup stats
+        if protein_dedup_stats_text:
+            r.write("  Protein-level dedup (95% aa identity):\n")
+            for line in protein_dedup_stats_text.strip().splitlines():
+                r.write(f"    {line.strip()}\n")
+            r.write("\n")
+
+        # Full merge stats text
+        if merge_stats_text:
+            r.write("  Full merge statistics:\n")
+            for line in merge_stats_text.splitlines():
+                r.write(f"    {line}\n")
+            r.write("\n")
 
         # --- Section 6: Corset cluster sizes ---
         r.write("6. CORSET CLUSTER SIZES\n")
@@ -430,7 +586,7 @@ def main():
             r.write("  (BUSCO Trinity summary not available)\n")
         r.write("\n")
 
-        r.write("  --- Final proteins (protein mode) ---\n")
+        r.write("  --- Final proteins (protein mode, TD2+MetaEuk+GeneMarkS-T merged) ---\n")
         if busco_final_text:
             for line in busco_final_text.splitlines():
                 r.write(f"  {line}\n")
@@ -445,7 +601,6 @@ def main():
             n_annotated = len(annot_by_protein)
             pct_annotated = n_annotated / n_proteins * 100 if n_proteins > 0 else 0.0
 
-            # Count per-DB coverage
             all_dbs = set()
             for dbs in annot_by_protein.values():
                 all_dbs.update(dbs)
@@ -465,7 +620,6 @@ def main():
                 pct = cnt / n_proteins * 100 if n_proteins > 0 else 0.0
                 r.write(f"  {db:<30} {cnt:>10,} {pct:>11.1f}%\n")
 
-            # Top Pfam domains
             if pfam_counts:
                 r.write(f"\n  Top 15 Pfam domains:\n")
                 for domain, count in sorted(pfam_counts.items(),

@@ -7,9 +7,9 @@ process THINNING_REPORT {
 
     input:
     path(trinity_fasta)
-    path(supertranscripts_fasta)
+    path(representatives_fasta)
     path(corset_clust)
-    path(orf_to_gene_map)
+    path(merge_map)
     path(faa)
     path(initial_quant_dirs)
     path(final_quant_dirs)
@@ -19,6 +19,9 @@ process THINNING_REPORT {
     path(sortmerna_logs, stageAs: 'sortmerna_??.log')
     path(taxonomy_breakdown)
     path(transannot_tsv)
+    path(merge_stats)
+    path(dedup_stats)
+    path(protein_dedup_stats)
     val(species_label)
 
     output:
@@ -30,19 +33,22 @@ process THINNING_REPORT {
     def log_files  = sortmerna_logs.collect { f -> f.name }.join(',')
     """
     thinning_report.py \\
-        ${species_label} \\
-        ${trinity_fasta} \\
-        ${supertranscripts_fasta} \\
-        ${corset_clust} \\
-        ${orf_to_gene_map} \\
-        ${faa} \\
-        ${init_dirs} \\
-        ${final_dirs} \\
-        ${busco_trinity_summary} \\
-        ${busco_final_summary} \\
-        ${id_validation} \\
-        ${log_files} \\
-        ${taxonomy_breakdown} \\
-        ${transannot_tsv}
+        --species          ${species_label} \\
+        --trinity          ${trinity_fasta} \\
+        --representatives  ${representatives_fasta} \\
+        --clusters         ${corset_clust} \\
+        --merge-map        ${merge_map} \\
+        --faa              ${faa} \\
+        --initial-quants   ${init_dirs} \\
+        --final-quants     ${final_dirs} \\
+        --busco-trinity    ${busco_trinity_summary} \\
+        --busco-final      ${busco_final_summary} \\
+        --id-validation    ${id_validation} \\
+        --sortmerna-logs   ${log_files} \\
+        --taxonomy         ${taxonomy_breakdown} \\
+        --transannot       ${transannot_tsv} \\
+        --merge-stats      ${merge_stats} \\
+        --dedup-stats      ${dedup_stats} \\
+        --protein-dedup-stats ${protein_dedup_stats}
     """
 }

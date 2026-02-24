@@ -26,8 +26,8 @@ cd $LAUNCH_DIR
 sg fjellheimlab -c "
 nextflow run $PIPELINE_DIR/main.nf \
     -profile apptainer,orion \
-    -resume \
     -ansi-log false \
+    -resume \
     -w $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/BMAX/work \
     --trinity_fasta $PROJECTS/FjellheimLab/martpali/AnnualPerennial/assemblies/BMAX-Trinity1/BMAX-Trinity.fasta \
     --samplesheet $HOME/AnnualPerennial/nf-denovoslim/BMAX.samplesheet.csv \
@@ -37,7 +37,6 @@ nextflow run $PIPELINE_DIR/main.nf \
     --mmseqs2_eggnog $PROJECTS/glowberry/transannot/db/eggNOG7_profiles \
     --mmseqs2_taxonomy_db $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/UniRef50taxdb \
     --diamond_db $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/uniref50.dmnd \
-    --eggnog_annotations $PROJECTS/glowberry/transannot/db/e7_as_e5_annotations.tsv \
     --td2_strategy aggressive \
     --busco_lineage poales_odb12 \
     --filter_taxon 33090 \

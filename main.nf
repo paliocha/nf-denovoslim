@@ -2,8 +2,9 @@
 
 /*
  * nf-denovoslim — collapse a Trinity de novo transcriptome into a
- * non-redundant gene set with SuperTranscripts, one best protein per
- * gene, gene-level Salmon quantification, and functional annotation.
+ * non-redundant gene set with representative transcripts, merged
+ * TD2+MetaEuk+GeneMarkS-T proteins, gene-level Salmon quantification,
+ * and functional annotation.
  */
 
 // --- Module imports ---
@@ -15,7 +16,8 @@ include { SALMON_INDEX as SALMON_INDEX_FINAL   } from './modules/salmon_index'
 include { SALMON_QUANT as SALMON_QUANT_INITIAL } from './modules/salmon_quant'
 include { SALMON_QUANT as SALMON_QUANT_FINAL   } from './modules/salmon_quant'
 include { CORSET                           } from './modules/corset'
-include { LACE                             } from './modules/lace'
+include { SELECT_REP                       } from './modules/select_representative'
+include { MMSEQS2_CLUSTER                  } from './modules/mmseqs2_cluster'
 include { MMSEQS2_TAXONOMY                 } from './modules/mmseqs2_taxonomy'
 include { DIAMOND_BLASTX                   } from './modules/frameshift_correction'
 include { CORRECT_FRAMESHIFTS              } from './modules/frameshift_correction'
@@ -24,59 +26,24 @@ include { MMSEQS2_SEARCH as MMSEQS2_SEARCH_SWISSPROT } from './modules/mmseqs2_s
 include { MMSEQS2_SEARCH as MMSEQS2_SEARCH_PFAM      } from './modules/mmseqs2_search'
 include { TD2_PREDICT                      } from './modules/td2_predict'
 include { SELECT_BEST_ORF                  } from './modules/select_best_orf'
+include { METAEUK_PREDICT                  } from './modules/metaeuk'
+include { PSAURON_METAEUK                  } from './modules/psauron_metaeuk'
+include { GMST_PREDICT                     } from './modules/gmst'
+include { PSAURON_GMST                     } from './modules/psauron_gmst'
+include { MERGE_PREDICTIONS                } from './modules/merge_predictions'
+include { MMSEQS2_CLUSTER_PROTEIN           } from './modules/mmseqs2_cluster_protein'
 include { VALIDATE_IDS                     } from './modules/validate_ids'
 include { BUSCO as BUSCO_TRINITY           } from './modules/busco'
 include { BUSCO as BUSCO_QC                } from './modules/busco'
 include { TRANSANNOT                       } from './modules/transannot'
 include { THINNING_REPORT                  } from './modules/thinning_report'
 
-// --- Pipeline parameters ---
-// Required params (no default) must be supplied via --param on the CLI or a params file.
-
-// Input
-params.trinity_fasta       = null          // required
-params.samplesheet         = null          // required
-params.species_label       = 'species_X'
-
-// SortMeRNA rRNA databases
-params.sortmerna_db_urls   = [
-    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/rfam-5.8s-database-id98.fasta',
-    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/rfam-5s-database-id98.fasta',
-    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-arc-16s-id95.fasta',
-    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-arc-23s-id98.fasta',
-    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-bac-16s-id90.fasta',
-    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-bac-23s-id98.fasta',
-    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-euk-18s-id95.fasta',
-    'https://raw.githubusercontent.com/biocore/sortmerna/v4.3.4/data/rRNA_databases/silva-euk-28s-id98.fasta'
-]
-params.sortmerna_db_dir    = null          // optional: pre-downloaded local dir
-
-// Databases (required — pre-built before pipeline run)
-params.mmseqs2_swissprot   = null          // required
-params.mmseqs2_pfam        = null          // required
-params.mmseqs2_eggnog      = null          // required
-params.mmseqs2_taxonomy_db = null          // required
-params.busco_lineage       = null          // required  e.g. 'poales_odb12'
-params.diamond_db          = null          // required
-
-// Cluster (optional)
-params.unix_group          = null
-params.orion_exclude_nodes = null          // e.g. 'cn-37'
-
-// Taxonomy filter — see nextflow.config for filter_taxon default (33090)
-
-// TD2 ORF prediction — see nextflow.config for td2_min_orf_length / td2_strand_specific
-
-// Search sensitivity — see nextflow.config for mmseqs2_search_sens default (7.0)
-
-// Output
-params.outdir              = './results'
-
 // --- Main workflow ---
 
 workflow {
 
-    main:
+    // Validate required parameters
+    Utils.validateParams(params)
 
     // Parse samplesheet: sample,fastq_1,fastq_2,strandedness[,condition]
     ch_samplesheet = channel
@@ -164,24 +131,26 @@ workflow {
 
     CORSET(ch_all_quants, ch_sample_conditions, params.species_label)
 
-    // -- Lace: build SuperTranscripts --
+    // -- Representative selection + taxonomy filter + nucleotide dedup --
 
-    LACE(ch_trinity, CORSET.out.clust, params.species_label)
+    SELECT_REP(ch_trinity, CORSET.out.clust, params.species_label)
 
-    // -- Taxonomy filter (keep Viridiplantae) --
-
+    // Taxonomy filter first: fewer sequences for dedup, avoids losing a
+    // plant gene because its 95%-identical contaminant was the cluster rep.
     MMSEQS2_TAXONOMY(
-        LACE.out.fasta,
+        SELECT_REP.out.fasta,
         params.mmseqs2_taxonomy_db,
         params.mmseqs2_search_sens,
         params.filter_taxon,
         params.species_label
     )
 
+    MMSEQS2_CLUSTER(MMSEQS2_TAXONOMY.out.fasta, params.species_label)
+
     // -- Frameshift correction --
 
-    DIAMOND_BLASTX(MMSEQS2_TAXONOMY.out.fasta, params.diamond_db, params.species_label)
-    CORRECT_FRAMESHIFTS(MMSEQS2_TAXONOMY.out.fasta, DIAMOND_BLASTX.out.tsv, params.species_label)
+    DIAMOND_BLASTX(MMSEQS2_CLUSTER.out.fasta, params.diamond_db, params.species_label)
+    CORRECT_FRAMESHIFTS(MMSEQS2_CLUSTER.out.fasta, DIAMOND_BLASTX.out.tsv, params.species_label)
 
     // -- ORF prediction (TD2 + homology support) --
 
@@ -207,7 +176,7 @@ workflow {
         params.species_label
     )
 
-    // -- Best ORF selection --
+    // -- TD2 best ORF selection --
 
     SELECT_BEST_ORF(
         TD2_PREDICT.out.psauron_scores,
@@ -216,14 +185,48 @@ workflow {
         params.species_label
     )
 
-    // -- Gene-level Salmon quant on SuperTranscripts --
+    // -- MetaEuk ORF prediction (parallel to TD2 branch) --
+
+    METAEUK_PREDICT(
+        CORRECT_FRAMESHIFTS.out.fasta,
+        params.mmseqs2_swissprot,
+        params.species_label
+    )
+
+    PSAURON_METAEUK(METAEUK_PREDICT.out.faa, params.species_label)
+
+    // -- GeneMarkS-T ORF prediction (parallel to TD2 + MetaEuk) --
+
+    GMST_PREDICT(CORRECT_FRAMESHIFTS.out.fasta, params.species_label)
+    PSAURON_GMST(GMST_PREDICT.out.fnn, params.species_label)
+
+    // -- Merge TD2 + MetaEuk + GeneMarkS-T predictions --
+
+    MERGE_PREDICTIONS(
+        SELECT_BEST_ORF.out.faa,
+        SELECT_BEST_ORF.out.map,
+        METAEUK_PREDICT.out.faa,
+        METAEUK_PREDICT.out.map,
+        PSAURON_METAEUK.out.scores,
+        GMST_PREDICT.out.faa,
+        GMST_PREDICT.out.map,
+        PSAURON_GMST.out.scores,
+        params.min_psauron,
+        params.species_label
+    )
+
+    // -- Protein-level dedup (95% aa identity) --
+
+    MMSEQS2_CLUSTER_PROTEIN(MERGE_PREDICTIONS.out.faa, params.species_label)
+
+    // -- Gene-level Salmon quant on representative transcripts --
 
     SALMON_INDEX_FINAL(CORRECT_FRAMESHIFTS.out.fasta)
 
     SALMON_QUANT_FINAL(
         ch_reads_for_salmon,
         SALMON_INDEX_FINAL.out.index.first(),
-        'st_quant'
+        'gene_quant'
     )
 
     // -- ID validation --
@@ -234,16 +237,16 @@ workflow {
 
     VALIDATE_IDS(
         ch_first_quant_sf,
-        SELECT_BEST_ORF.out.faa,
+        MMSEQS2_CLUSTER_PROTEIN.out.faa,
         params.species_label
     )
 
-    // -- BUSCO QC + TransAnnot (parallel) --
+    // -- BUSCO QC + TransAnnot (parallel, on deduped proteins) --
 
-    BUSCO_QC(SELECT_BEST_ORF.out.faa, params.species_label, 'final')
+    BUSCO_QC(MMSEQS2_CLUSTER_PROTEIN.out.faa, params.species_label, 'final')
 
     TRANSANNOT(
-        SELECT_BEST_ORF.out.faa,
+        MMSEQS2_CLUSTER_PROTEIN.out.faa,
         params.species_label,
         params.mmseqs2_pfam,
         params.mmseqs2_eggnog,
@@ -256,8 +259,8 @@ workflow {
         ch_trinity,
         CORRECT_FRAMESHIFTS.out.fasta,
         CORSET.out.clust,
-        SELECT_BEST_ORF.out.map,
-        SELECT_BEST_ORF.out.faa,
+        MERGE_PREDICTIONS.out.map,
+        MMSEQS2_CLUSTER_PROTEIN.out.faa,
         SALMON_QUANT_INITIAL.out.quant_dir.collect(),
         SALMON_QUANT_FINAL.out.quant_dir.collect(),
         BUSCO_TRINITY.out.summary,
@@ -266,6 +269,9 @@ workflow {
         SORTMERNA.out.log.map { _sample_id, logfile -> logfile }.collect(),
         MMSEQS2_TAXONOMY.out.breakdown,
         TRANSANNOT.out.annotation,
+        MERGE_PREDICTIONS.out.stats,
+        MMSEQS2_CLUSTER.out.stats,
+        MMSEQS2_CLUSTER_PROTEIN.out.stats,
         params.species_label
     )
 

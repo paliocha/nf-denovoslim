@@ -1,14 +1,13 @@
 # nf-denovoslim
 
-Nextflow DSL2 pipeline that collapses a fragmented Trinity *de novo* transcriptome assembly into a non-redundant gene set with one protein per gene.
+Nextflow DSL2 pipeline that collapses a fragmented Trinity *de novo* transcriptome assembly into a non-redundant gene set with one protein per gene, using three ORF predictors merged by coding-potential scoring.
 
 ## Overview
 
 Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
 
-- **SuperTranscript FASTA** — one consensus sequence per gene
-- **Protein FASTA** (`.faa`) — one best protein per gene
-- **GFF3** — ORF coordinates on SuperTranscripts
+- **Representative transcript FASTA** — longest transcript per Corset gene cluster
+- **Protein FASTA** (`.faa`) — one best protein per gene (3-way merge of TD2 + MetaEuk + GeneMarkS-T, deduplicated at 95% aa identity)
 - **Gene-level Salmon quantification** — `quant.sf` with IDs matching the `.faa`
 - **Functional annotation** — SwissProt + Pfam + eggNOG via TransAnnot
 - **Dual BUSCO assessment** — Trinity baseline (transcriptome mode) + final proteins (protein mode)
@@ -17,9 +16,11 @@ Given a Trinity assembly and paired-end RNA-seq reads, the pipeline produces:
 
 The **full, unfiltered Trinity assembly** goes directly into Salmon (with `--dumpEq`, no `--hardFilter`) so that multi-mapping signal across isoforms is preserved for Corset's hierarchical clustering. Deduplicating transcripts *before* Corset destroys this signal and produces mostly singleton clusters.
 
+After Corset clustering, the **longest transcript** per cluster is selected as the representative (SELECT_REP). This avoids the complexity and runtime of SuperTranscript assembly while retaining the most complete sequence per gene for downstream ORF prediction.
+
 ### Taxonomy filtering
 
-Step 4 uses MMseqs2 `taxonomy` against UniRef50 to classify every SuperTranscript and remove non-plant contaminants (bacteria, fungi, oomycetes, metazoa, viruses, etc.), keeping only Viridiplantae (NCBI taxon 33090) and unclassified sequences (taxon 0 — likely novel or species-specific genes with no database hit).
+Step 4 uses MMseqs2 `taxonomy` against UniRef50 to classify every representative transcript and remove non-plant contaminants (bacteria, fungi, oomycetes, metazoa, viruses, etc.), keeping only Viridiplantae (NCBI taxon 33090) and unclassified sequences (taxon 0 — likely novel or species-specific genes with no database hit).
 
 Key parameter choices:
 
@@ -28,14 +29,19 @@ Key parameter choices:
 - **ORF filter (`--orf-filter 1`, sensitivity 2)** — before the main `-s 7.0` search, a fast low-sensitivity pre-screen discards ORFs with no detectable homology, reducing the query set from millions of short ORFs to only those with plausible hits. This dramatically cuts runtime without affecting the final taxonomy assignments.
 - **UniRef50 (not UniRef90)** — 60M clusters vs 300M+ sequences. UniRef50 provides sufficient taxonomic resolution for kingdom-level filtering while fitting in ~500 GB RAM and running 3–4× faster than UniRef90.
 
-### ORF prediction tuning
+### Three-way ORF prediction
 
-Step 6 uses [TD2](https://github.com/Sommer-lab/TD2) (TransDecoder2) for ORF prediction. Two sub-steps interact:
+Three ORF predictors run in parallel on frameshift-corrected representative transcripts:
 
-1. **TD2.LongOrfs** extracts candidate ORFs above a minimum length.
-2. **TD2.Predict** scores candidates with [PSAURON](https://github.com/Sommer-lab/PSAURON) (deep-learning coding potential) and rescues borderline ORFs that have database homology (SwissProt/Pfam hits via `--retain-mmseqs-hits`).
+1. **TD2** (TransDecoder2) — homology-supported ORF prediction. TD2.LongOrfs extracts candidate ORFs with length-scaling for short transcripts, MMseqs2 searches SwissProt + Pfam for homology evidence, then TD2.Predict scores candidates with PSAURON and rescues borderline ORFs with database hits. Best ORF per gene selected by `select_best_orf.py` (PSAURON + completeness ranking).
+2. **MetaEuk** — profile-based homology search against SwissProt. Best protein per gene selected by `metaeuk_select_best.py` (score ranking).
+3. **GeneMarkS-T** — ab initio self-training gene finder (single-threaded). Best ORF per gene selected by `gmst_select_best.py` (completeness → length ranking).
 
-In *de novo* transcriptome assemblies the median SuperTranscript is often short (~620 nt for FPRA). A flat minimum ORF length of 90 aa (270 nt) discards legitimate short proteins from short transcripts. TD2 v1.0.8 provides **length-scaling** parameters to address this:
+All three predictors' outputs are PSAURON-scored independently, then merged by `merge_predictions.py` with ranking: **completeness → PSAURON score → sequence length**. Predictions below `--min_psauron 0.3` are discarded. The merged protein set is then deduplicated at 95% amino acid identity via MMseqs2 clustering to remove near-identical proteins from different predictors.
+
+### TD2 ORF prediction tuning
+
+In *de novo* transcriptome assemblies the median representative transcript is often short (~620 nt for FPRA). A flat minimum ORF length of 90 aa (270 nt) discards legitimate short proteins from short transcripts. TD2 v1.0.8 provides **length-scaling** parameters:
 
 | Parameter | Flag | Description |
 |-----------|------|-------------|
@@ -45,20 +51,16 @@ In *de novo* transcriptome assemblies the median SuperTranscript is often short 
 
 The decision logic is: **accept ORF if** `len ≥ -m` **OR** (`len ≥ -M` **AND** `len / transcript_len ≥ -L`). Setting `-M` without `-L` has no effect — both must be specified together.
 
-The pipeline ships three TD2 tuning strategies:
+Three TD2 tuning strategies are available via `--td2_strategy`:
 
 | Strategy | `-m` | `-M` | `-L` | FDR | Use case |
 |----------|-----:|-----:|-----:|----:|----------|
 | **Conservative** | 90 | 70 | 0.7 | 0.05 | Reference-quality assemblies with long N50. Minimises false-positive ORFs at the cost of losing short proteins. |
 | **Standard** (default) | 90 | 50 | 0.5 | 0.10 | Fragmented *de novo* assemblies (median ~500–800 nt). Recovers short proteins proportional to transcript length while filtering noise from longer sequences. |
-| **Aggressive** | 90 | 30 | 0.4 | 0.10 | Highly fragmented assemblies or when maximising sensitivity matters more than precision. Recovers very short ORFs (≥30 aa / 90 nt) at the cost of more false positives passing to TD2.Predict. |
-
-Currently these are set via individual parameters (`--td2_min_orf_length`, `--td2_abs_min_orf`, `--td2_length_scale`) or with the convenience flag:
+| **Aggressive** | 90 | 30 | 0.4 | 0.20 | Highly fragmented assemblies or when maximising sensitivity matters more than precision. Recovers very short ORFs (≥30 aa / 90 nt) at the cost of more false positives passing to TD2.Predict. |
 
 ```bash
 # Use a named strategy (overrides individual TD2 params)
-nextflow run main.nf --td2_strategy conservative ...
-nextflow run main.nf --td2_strategy standard ...    # same as defaults
 nextflow run main.nf --td2_strategy aggressive ...
 
 # Or set individual params directly (when --td2_strategy is not set)
@@ -70,42 +72,44 @@ nextflow run main.nf --td2_abs_min_orf 60 --td2_length_scale 0.6 ...
 The pipeline runs BUSCO twice to measure deduplication effectiveness:
 
 1. **BUSCO Trinity** (transcriptome mode) — baseline on the raw Trinity assembly, typically showing high completeness but extreme duplication (~90% D) due to multiple isoforms per gene.
-2. **BUSCO QC** (protein mode) — on the final best-ORF proteins (one per gene). Duplicated BUSCOs should drop dramatically (to ~10–30% D) since each Corset cluster yields one SuperTranscript → one best ORF → one protein. Residual duplication reflects genuine paralogs, not assembly artifacts.
+2. **BUSCO QC** (protein mode) — on the final deduplicated proteins (one per gene after 3-way merge + 95% aa dedup). Duplicated BUSCOs should drop dramatically (to ~10–30% D) since each Corset cluster yields one representative → one best ORF → one protein. Residual duplication reflects genuine paralogs, not assembly artifacts.
 
 Protein-mode BUSCO is the definitive quality metric because (a) it operates directly on the pipeline's deliverable, (b) it avoids MetaEuk gene prediction artifacts that inflate duplication in transcriptome mode, and (c) the one-protein-per-gene design means any remaining duplication is biologically real.
 
 ## Pipeline
 
-<picture>
-  <img alt="nf-denovoslim pipeline metro map" src="docs/pipeline_metro.svg">
-</picture>
-
-Three routes through the pipeline: **Assembly** (green) follows the main processing chain, **Quantification** (blue) forks after frameshift correction to re-quantify SuperTranscripts with Salmon, and **Annotation** (gold) branches from the best-ORF selection to TransAnnot. **BUSCO Trinity** runs independently on the raw Trinity assembly as a baseline QC check.
+28 processes across four parallel routes: **Assembly** follows the main representative selection → ORF prediction chain, **Quantification** forks after frameshift correction to re-quantify representatives with Salmon, **Annotation** branches from the merged protein set to TransAnnot + BUSCO QC. **BUSCO Trinity** runs independently on the raw assembly as a baseline.
 
 | Step | Process | Tool |
 |------|---------|------|
 | 0 | rRNA filtering | SortMeRNA 4.3.7 |
 | 1 | Initial quantification (full Trinity, `--dumpEq`) | Salmon 1.10.3 |
 | 2 | Transcript-to-gene clustering | Corset 1.10 ([paliocha/Corset](https://github.com/paliocha/Corset)) |
-| 3 | Build SuperTranscripts | [Lace 2.0.0](https://github.com/paliocha/Lace) |
+| 3 | Select longest transcript per cluster | Python/BioPython |
 | 4 | Taxonomy filter (keep Viridiplantae) | MMseqs2 taxonomy |
-| 5 | Frameshift correction | Diamond blastx 2.1.22 |
-| 6 | ORF prediction with homology support | TD2 + MMseqs2 (SwissProt, Pfam) |
-| 7 | Best ORF selection (PSAURON FDR) | Python/BioPython |
-| 8 | Gene-level quantification | Salmon 1.10.3 |
-| 9 | Protein completeness | BUSCO v6 (protein mode) |
-| 10 | Trinity completeness (parallel) | BUSCO v6 (transcriptome mode) |
-| 11 | Functional annotation | TransAnnot 4.0.0 |
-| 12 | Summary report | Python |
+| 4b | Nucleotide dedup (95% nt identity) | MMseqs2 cluster |
+| 5 | Frameshift correction | Diamond blastx 2.1.22 + BioPython |
+| 6a | ORF prediction (homology-supported) | TD2 + MMseqs2 (SwissProt, Pfam) |
+| 6b | ORF prediction (profile-based) | MetaEuk (vs SwissProt) |
+| 6c | ORF prediction (ab initio) | GeneMarkS-T |
+| 7 | PSAURON scoring (each predictor) | TD2 / PSAURON |
+| 8 | 3-way merge (completeness → PSAURON → length) | Python/BioPython |
+| 8b | Protein dedup (95% aa identity) | MMseqs2 cluster |
+| 9 | Gene-level quantification | Salmon 1.10.3 |
+| 10 | Protein completeness | BUSCO v6 (protein mode) |
+| 11 | Trinity completeness (parallel) | BUSCO v6 (transcriptome mode) |
+| 12 | Functional annotation | TransAnnot 4.0.0 |
+| 13 | Summary report | Python (argparse) |
 
 ## Requirements
 
-- [Nextflow](https://www.nextflow.io/) >= 23.04
+- [Nextflow](https://www.nextflow.io/) >= 25.10.0
 - [Apptainer](https://apptainer.org/) (or Singularity / Docker)
 - Pre-built MMseqs2 databases: SwissProt, Pfam, eggNOG7, UniRef50 taxonomy
 - Diamond database: UniRef50 (for frameshift correction)
-- eggNOG annotation TSV (for TransAnnot)
-- Local containers: `containers/td2/td2_1.0.8.sif`, `containers/lace/lace_2.0.sif`
+- Local containers: `containers/td2/td2_1.0.8.sif`, `containers/corset/corset_1.10.sif`, `containers/transannot/transannot_4.0.0_eggnog7.sif`
+
+All other containers (SortMeRNA, Salmon, MMseqs2, Diamond, BioPython, BUSCO, MetaEuk, GeneMarkS-T) are pulled automatically from Biocontainers/Seqera.
 
 ## Usage
 
@@ -120,7 +124,6 @@ nextflow run main.nf \
     --mmseqs2_eggnog /path/to/eggNOG7DB \
     --mmseqs2_taxonomy_db /path/to/UniRef50taxdb \
     --diamond_db /path/to/uniref50.dmnd \
-    --eggnog_annotations /path/to/eggnog_annotations.tsv \
     --busco_lineage poales_odb12 \
     --outdir /path/to/results
 ```
@@ -145,7 +148,7 @@ The `condition` column is optional. If omitted, condition is extracted from the 
 | `docker` | Docker containers |
 | `slurm` | Generic SLURM scheduling |
 | `orion` | NMBU Orion HPC (DB paths, SLURM queue, bind mounts, group quota fix) |
-| `highmem` | 32 CPUs / 1200 GB RAM cap |
+| `highmem` | 64 CPUs / 1200 GB RAM cap |
 | `standard` | 16 CPUs / 128 GB RAM cap (default) |
 | `test` | 4 CPUs / 16 GB RAM cap |
 
@@ -163,10 +166,10 @@ Combine as needed: `-profile apptainer,orion` or `-profile apptainer,slurm,highm
 | `--mmseqs2_eggnog` | required | MMseqs2 eggNOG7 profiles DB |
 | `--mmseqs2_taxonomy_db` | required | MMseqs2 UniRef50 taxonomy DB |
 | `--diamond_db` | required | Diamond UniRef50 DB |
-| `--eggnog_annotations` | required | eggNOG annotation TSV |
 | `--busco_lineage` | required | BUSCO lineage (e.g. `poales_odb12`) |
 | `--filter_taxon` | `33090` | NCBI taxon ID to keep (Viridiplantae) |
 | `--mmseqs2_search_sens` | `7.0` | MMseqs2 `-s` sensitivity |
+| `--min_psauron` | `0.3` | Minimum PSAURON score for merged predictions |
 | `--td2_strategy` | `null` | TD2 strategy preset: `conservative`, `standard`, or `aggressive` (overrides individual TD2 params) |
 | `--td2_min_orf_length` | `90` | Min ORF length (aa) for long transcripts (`-m`) |
 | `--td2_abs_min_orf` | `50` | Absolute min ORF length (aa) for short transcripts (`-M`) |
@@ -174,6 +177,7 @@ Combine as needed: `-profile apptainer,orion` or `-profile apptainer,slurm,highm
 | `--td2_strand_specific` | `true` | TD2 strand-specific mode |
 | `--sortmerna_db_dir` | `null` | Pre-downloaded rRNA DB dir |
 | `--unix_group` | `null` | Unix group for quota accounting |
+| `--orion_exclude_nodes` | `null` | SLURM nodes to exclude (e.g. `cn-37`) |
 | `--outdir` | `./results` | Output directory |
 
 ## Pre-building databases
@@ -205,10 +209,14 @@ docker save td2:1.0.8 -o td2.tar
 apptainer build containers/td2/td2_1.0.8.sif docker-archive://td2.tar
 ```
 
-**Lace** — download pre-built container from [paliocha/Lace releases](https://github.com/paliocha/Lace/releases):
+**Corset:**
 ```bash
-wget -O containers/lace/lace_2.0.sif \
-  https://github.com/paliocha/Lace/releases/download/v2.0.0/lace_2.0.sif
+cd containers/corset && bash build.sh
+```
+
+**TransAnnot:**
+```bash
+cd containers/transannot && bash build.sh
 ```
 
 ## Output
@@ -216,13 +224,13 @@ wget -O containers/lace/lace_2.0.sif \
 ```
 results/
 ├── clustering/
-│   ├── corset-clusters.txt               # tx2gene mapping
-│   └── corset-counts.txt                 # Gene-level raw counts
-├── supertranscripts/
-│   └── supertranscripts.fasta
+│   ├── corset-clusters.txt                # tx2gene mapping
+│   └── corset-counts.txt                  # Gene-level raw counts
+├── representatives/
+│   └── representatives.fasta              # Longest transcript per cluster
 ├── taxonomy/
 │   ├── taxRes_lca.tsv
-│   ├── supertranscripts_filtered.fasta
+│   ├── representatives_filtered.fasta
 │   ├── taxonomy_filter_stats.txt
 │   └── taxonomy_breakdown.tsv
 ├── frameshift_correction/
@@ -231,15 +239,16 @@ results/
 │   ├── swissprot_alnRes.m8
 │   └── pfam_alnRes.m8
 ├── proteins/
-│   └── SPECIES.faa                       # One protein per gene
-├── annotation/
-│   ├── best_orfs.gff3
-│   └── orf_to_gene_map.tsv
+│   ├── SPECIES.faa                        # Final deduplicated proteins
+│   ├── merge_map.tsv                      # Gene → predictor source mapping
+│   ├── merge_stats.txt                    # Per-predictor contribution counts
+│   ├── protein_dedup_stats.txt            # Dedup summary (before/after counts)
+│   └── cluster_stats.txt                  # MMseqs2 protein cluster sizes
 ├── salmon_final/
-│   └── {SAMPLE}_st_quant/quant.sf        # Gene-level quantification
+│   └── {SAMPLE}_quant/quant.sf            # Gene-level quantification
 ├── qc/
-│   ├── busco_trinity/                    # BUSCO transcriptome mode
-│   └── busco_final/                      # BUSCO protein mode
+│   ├── busco_trinity/                     # BUSCO transcriptome mode
+│   └── busco_final/                       # BUSCO protein mode
 ├── transannot/
 └── SPECIES_thinning_report.txt
 ```
@@ -254,9 +263,9 @@ library(DESeq2)
 
 files <- list.files("results/salmon_final", pattern = "quant.sf",
                      recursive = TRUE, full.names = TRUE)
-names(files) <- gsub("_st_quant$", "", basename(dirname(files)))
+names(files) <- gsub("_quant$", "", basename(dirname(files)))
 
-# SuperTranscript = gene, so tx2gene is an identity mapping
+# Representative = gene, so tx2gene is an identity mapping
 tx2gene <- data.frame(
   TXNAME = read.delim(files[1])$Name,
   GENEID = read.delim(files[1])$Name

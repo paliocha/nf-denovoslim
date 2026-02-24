@@ -82,15 +82,15 @@ process CORRECT_FRAMESHIFTS {
     val(species_label)
 
     output:
-    path("supertranscripts_corrected.fasta"), emit: fasta
-    path("frameshift_stats.txt"),             emit: stats
+    path("representatives_corrected.fasta"), emit: fasta
+    path("frameshift_stats.txt"),            emit: stats
 
     script:
     """
     correct_frameshifts.py \\
         ${supertranscripts_fasta} \\
         ${diamond_tsv} \\
-        supertranscripts_corrected.fasta \\
+        representatives_corrected.fasta \\
         > frameshift_stats.txt
     """
 }
