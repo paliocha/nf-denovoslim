@@ -1,0 +1,36 @@
+Bootstrap: docker
+From: ubuntu:24.04
+
+%labels
+    Author Martin Paliocha
+    Description GeneMarkS-T (gmst.pl) — ab initio self-training gene finder for transcriptomes
+    License Academic — requires manual download from topaz.gatech.edu
+
+%files
+    # Copy the extracted GeneMarkS-T directory into the image.
+    # Before building, download from http://topaz.gatech.edu/GeneMark/license_download.cgi
+    # and extract gmst_linux_64.tar.gz so that gmst.pl sits in this directory.
+    gmst.pl /opt/gmst/gmst.pl
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update && apt-get install -y --no-install-recommends \
+        perl \
+        python3 \
+        ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+    chmod +x /opt/gmst/gmst.pl
+
+%environment
+    export PATH="/opt/gmst:${PATH}"
+    export LC_ALL=C
+
+%runscript
+    exec gmst.pl "$@"
+
+%test
+    gmst.pl 2>&1 | head -1 || true
+    python3 --version

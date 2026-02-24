@@ -14,7 +14,9 @@ singularity_cache/
 # Container images (large binaries)
 containers/
 *.sif
-!containers/**/*.sif
+!containers/**/*.def
+!containers/**/*.sh
+!containers/**/Dockerfile
 *.tar
 
 # Samplesheets (contain local paths)
