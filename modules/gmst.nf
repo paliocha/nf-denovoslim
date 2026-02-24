@@ -22,7 +22,7 @@ process GMST_PREDICT {
     script:
     """
     # Run GeneMarkS-T (self-training mode)
-    gmst.pl --faa --fnn --format GFF3 ${fasta}
+    gmst.pl --faa --fnn ${fasta}
 
     # Pick best ORF per gene: completeness → length (PSAURON re-ranks in merge)
     gmst_select_best.py \\
