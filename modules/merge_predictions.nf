@@ -15,6 +15,7 @@ process MERGE_PREDICTIONS {
     path(gmst_faa)
     path(gmst_map)
     path(gmst_psauron)
+    path(salmon_quant_dirs)
     val(min_psauron)
     val(species_label)
 
@@ -24,6 +25,7 @@ process MERGE_PREDICTIONS {
     path("merge_stats.txt"),      emit: stats
 
     script:
+    def quant_dirs = salmon_quant_dirs.collect { d -> d.name }.join(',')
     """
     merge_predictions.py \\
         --td2-faa ${td2_faa} \\
@@ -34,6 +36,7 @@ process MERGE_PREDICTIONS {
         --gmst-faa ${gmst_faa} \\
         --gmst-map ${gmst_map} \\
         --gmst-psauron ${gmst_psauron} \\
+        --salmon-quants ${quant_dirs} \\
         --min-psauron ${min_psauron} \\
         --species ${species_label}
     """

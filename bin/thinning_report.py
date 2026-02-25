@@ -150,6 +150,10 @@ def main():
                         help='Comma-separated final quant dirs')
     parser.add_argument('--busco-trinity', required=True,
                         help='BUSCO Trinity summary file')
+    parser.add_argument('--busco-reps', default='',
+                        help='BUSCO representatives summary file')
+    parser.add_argument('--busco-corrected', default='',
+                        help='BUSCO corrected representatives summary file')
     parser.add_argument('--busco-final', required=True,
                         help='BUSCO final summary file')
     parser.add_argument('--id-validation', required=True,
@@ -177,6 +181,8 @@ def main():
     initial_qdir  = args.initial_quants
     final_qdir    = args.final_quants
     busco_trinity = args.busco_trinity
+    busco_reps    = args.busco_reps
+    busco_corrected = args.busco_corrected
     busco_final   = args.busco_final
     id_validation = args.id_validation
     sortmerna_arg = args.sortmerna_logs
@@ -287,27 +293,38 @@ def main():
     metaeuk_lengths = []
     gmst_lengths = []
 
+    merge_mean_tpms = []   # per-gene mean TPM from merge step (if available)
+
     if os.path.isfile(merge_map):
         with open(merge_map) as f:
-            header = f.readline()
+            header_line = f.readline().strip()
+            cols = header_line.split("\t")
+            # Build column index map for robust parsing
+            ci = {name: i for i, name in enumerate(cols)}
+            has_tpm = "mean_tpm" in ci
+            has_3way = "gmst_length" in ci
+
             for line in f:
                 parts = line.strip().split("\t")
-                if len(parts) >= 14:  # 3-way format (TD2+MetaEuk+GeneMarkS-T)
-                    source = parts[1]
-                    prot_len = int(parts[2])
-                    psauron = float(parts[3])
-                    compl = parts[4]
-                    td2_len = int(parts[5])
-                    td2_ps = float(parts[6])
-                    met_len = int(parts[8])
-                    met_ps = float(parts[9])
-                    gm_len = int(parts[11])
-                    gm_ps = float(parts[12])
+                if has_3way and len(parts) >= len(cols):
+                    source = parts[ci["source"]]
+                    prot_len = int(parts[ci["protein_length"]])
+                    psauron = float(parts[ci["psauron_score"]])
+                    compl = parts[ci["completeness"]]
+                    td2_len = int(parts[ci["td2_length"]])
+                    td2_ps = float(parts[ci["td2_psauron"]])
+                    met_len = int(parts[ci["metaeuk_length"]])
+                    met_ps = float(parts[ci["metaeuk_psauron"]])
+                    gm_len = int(parts[ci["gmst_length"]])
+                    gm_ps = float(parts[ci["gmst_psauron"]])
 
                     merge_sources[source] += 1
                     merge_psaurons.append(psauron)
                     merge_lengths.append(prot_len)
                     merge_completeness[compl] += 1
+
+                    if has_tpm:
+                        merge_mean_tpms.append(float(parts[ci["mean_tpm"]]))
 
                     if td2_len > 0:
                         td2_psaurons.append(td2_ps)
@@ -360,6 +377,16 @@ def main():
         with open(busco_trinity) as f:
             busco_trinity_text = f.read().strip()
 
+    busco_reps_text = ""
+    if busco_reps and os.path.isfile(busco_reps):
+        with open(busco_reps) as f:
+            busco_reps_text = f.read().strip()
+
+    busco_corrected_text = ""
+    if busco_corrected and os.path.isfile(busco_corrected):
+        with open(busco_corrected) as f:
+            busco_corrected_text = f.read().strip()
+
     busco_final_text = ""
     if os.path.isfile(busco_final):
         with open(busco_final) as f:
@@ -407,7 +434,11 @@ def main():
         r.write("-" * 40 + "\n")
         r.write(f"  Original Trinity transcripts:     {fmt(n_trinity)}\n")
         r.write(f"  Corset clusters (genes):           {fmt(len(cluster_counts))}\n")
-        r.write(f"  Representatives (after dedup):     {fmt(n_reps)}\n")
+        # Parse taxonomy-filter input count from dedup stats
+        if dedup_stats_text and 'Input sequences:' in dedup_stats_text:
+            n_after_tax = dedup_stats_text.split('Input sequences:')[1].split()[0].strip()
+            r.write(f"  After taxonomy filter:             {n_after_tax}\n")
+        r.write(f"  After nucleotide dedup:            {fmt(n_reps)}\n")
         if dedup_stats_text:
             for line in dedup_stats_text.strip().splitlines():
                 r.write(f"    {line.strip()}\n")
@@ -471,6 +502,12 @@ def main():
         if merge_psaurons:
             r.write(f"  Mean PSAURON score:    {statistics.mean(merge_psaurons):.3f}\n")
             r.write(f"  Median PSAURON:        {statistics.median(merge_psaurons):.3f}\n")
+        if merge_mean_tpms:
+            n_rescued = sum(1 for s in merge_sources if "rescued" in s)
+            n_rescued_genes = sum(v for k, v in merge_sources.items() if "rescued" in k)
+            r.write(f"  Expression-rescued genes: {fmt(n_rescued_genes)}\n")
+            r.write(f"  Mean gene TPM (merged): {statistics.mean(merge_mean_tpms):.2f}\n")
+            r.write(f"  Median gene TPM:        {statistics.median(merge_mean_tpms):.2f}\n")
         r.write("\n")
 
         # Completeness breakdown
@@ -584,6 +621,22 @@ def main():
                 r.write(f"  {line}\n")
         else:
             r.write("  (BUSCO Trinity summary not available)\n")
+        r.write("\n")
+
+        r.write("  --- Representatives (transcriptome mode) ---\n")
+        if busco_reps_text:
+            for line in busco_reps_text.splitlines():
+                r.write(f"  {line}\n")
+        else:
+            r.write("  (BUSCO representatives summary not available)\n")
+        r.write("\n")
+
+        r.write("  --- Corrected representatives (transcriptome mode) ---\n")
+        if busco_corrected_text:
+            for line in busco_corrected_text.splitlines():
+                r.write(f"  {line}\n")
+        else:
+            r.write("  (BUSCO corrected representatives summary not available)\n")
         r.write("\n")
 
         r.write("  --- Final proteins (protein mode, TD2+MetaEuk+GeneMarkS-T merged) ---\n")

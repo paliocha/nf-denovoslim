@@ -35,6 +35,8 @@ include { MERGE_PREDICTIONS                } from './modules/merge_predictions'
 include { MMSEQS2_CLUSTER_PROTEIN           } from './modules/mmseqs2_cluster_protein'
 include { VALIDATE_IDS                     } from './modules/validate_ids'
 include { BUSCO as BUSCO_TRINITY           } from './modules/busco'
+include { BUSCO as BUSCO_REPS              } from './modules/busco'
+include { BUSCO as BUSCO_CORRECTED         } from './modules/busco'
 include { BUSCO as BUSCO_QC                } from './modules/busco'
 include { TRANSANNOT                       } from './modules/transannot'
 include { DECONTAMINATE_TRINITY            } from './modules/decontaminate_trinity'
@@ -213,6 +215,16 @@ workflow {
     GMST_PREDICT(CORRECT_FRAMESHIFTS.out.fasta, params.species_label)
     PSAURON_GMST(GMST_PREDICT.out.fnn, params.species_label)
 
+    // -- Gene-level Salmon quant on representative transcripts --
+
+    SALMON_INDEX_FINAL(CORRECT_FRAMESHIFTS.out.fasta)
+
+    SALMON_QUANT_FINAL(
+        ch_reads_for_salmon,
+        SALMON_INDEX_FINAL.out.index.first(),
+        'gene_quant'
+    )
+
     // -- Merge TD2 + MetaEuk + GeneMarkS-T predictions --
 
     MERGE_PREDICTIONS(
@@ -224,6 +236,7 @@ workflow {
         GMST_PREDICT.out.faa,
         GMST_PREDICT.out.map,
         PSAURON_GMST.out.scores,
+        SALMON_QUANT_FINAL.out.quant_dir.collect(),
         params.min_psauron,
         params.species_label
     )
@@ -231,16 +244,6 @@ workflow {
     // -- Protein-level dedup (95% aa identity) --
 
     MMSEQS2_CLUSTER_PROTEIN(MERGE_PREDICTIONS.out.faa, params.species_label)
-
-    // -- Gene-level Salmon quant on representative transcripts --
-
-    SALMON_INDEX_FINAL(CORRECT_FRAMESHIFTS.out.fasta)
-
-    SALMON_QUANT_FINAL(
-        ch_reads_for_salmon,
-        SALMON_INDEX_FINAL.out.index.first(),
-        'gene_quant'
-    )
 
     // -- ID validation --
 
@@ -254,8 +257,10 @@ workflow {
         params.species_label
     )
 
-    // -- BUSCO QC + TransAnnot (parallel, on deduped proteins) --
+    // -- BUSCO QC (parallel, on deduped proteins + representatives) --
 
+    BUSCO_REPS(SELECT_REP.out.fasta, params.species_label, 'representatives')
+    BUSCO_CORRECTED(CORRECT_FRAMESHIFTS.out.fasta, params.species_label, 'corrected')
     BUSCO_QC(MMSEQS2_CLUSTER_PROTEIN.out.faa, params.species_label, 'final')
 
     TRANSANNOT(
@@ -277,6 +282,8 @@ workflow {
         SALMON_QUANT_INITIAL.out.quant_dir.collect(),
         SALMON_QUANT_FINAL.out.quant_dir.collect(),
         BUSCO_TRINITY.out.summary,
+        BUSCO_REPS.out.summary,
+        BUSCO_CORRECTED.out.summary,
         BUSCO_QC.out.summary,
         VALIDATE_IDS.out.report,
         SORTMERNA.out.log.map { _sample_id, logfile -> logfile }.collect(),

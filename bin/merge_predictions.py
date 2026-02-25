@@ -5,12 +5,16 @@ Usage:
     merge_predictions.py --td2-faa X --td2-map X \
         --metaeuk-faa X --metaeuk-map X --metaeuk-psauron X \
         --gmst-faa X --gmst-map X --gmst-psauron X \
+        --salmon-quants dir1,dir2 \
         --min-psauron 0.3 --species SPECIES
 
 Merge strategy (per gene):
-    1. Collect predictions from all sources that pass PSAURON >= min_psauron
-    2. Rank by: completeness (complete > partial) → PSAURON score → protein length
-    3. Pick the top-ranked prediction
+    1. Drop genes with zero expression across all samples.
+    2. Collect predictions from all sources that pass PSAURON >= min_psauron.
+       Rescue: if no prediction passes but the gene has mean TPM >= 1,
+       accept the best prediction even below the threshold (expression rescue).
+    3. Rank by: completeness → PSAURON → expression (mean TPM) → protein length.
+    4. Pick the top-ranked prediction.
 
 Outputs:
     - {species}.faa       : merged protein FASTA (one per gene)
@@ -20,6 +24,7 @@ Outputs:
 
 import argparse
 import csv
+import os
 import sys
 from Bio import SeqIO
 
@@ -29,7 +34,13 @@ from Bio import SeqIO
 # ---------------------------------------------------------------------------
 
 def parse_psauron_csv(path):
-    """Parse a PSAURON output CSV (handles preamble lines)."""
+    """Parse a PSAURON output CSV (handles preamble lines).
+
+    PSAURON uses different column names depending on input mode:
+      - Protein mode (-p):    ``in-frame_score``  (hyphen)
+      - Nucleotide CDS mode:  ``in_frame_score``  (underscore)
+    We accept both.
+    """
     scores = {}
     with open(path) as f:
         for line in f:
@@ -38,10 +49,20 @@ def parse_psauron_csv(path):
         else:
             print(f"WARNING: no 'description,' header in {path}", file=sys.stderr)
             return scores
-        reader = csv.DictReader(f, fieldnames=line.strip().split(","))
+        columns = line.strip().split(",")
+        reader = csv.DictReader(f, fieldnames=columns)
+        # Detect score column (hyphen vs underscore)
+        if "in-frame_score" in columns:
+            score_col = "in-frame_score"
+        elif "in_frame_score" in columns:
+            score_col = "in_frame_score"
+        else:
+            print(f"WARNING: no score column found in {path} (columns: {columns})",
+                  file=sys.stderr)
+            return scores
         for row in reader:
             try:
-                scores[row["description"]] = float(row["in-frame_score"])
+                scores[row["description"]] = float(row[score_col])
             except (ValueError, KeyError):
                 continue
     return scores
@@ -70,6 +91,54 @@ def mean(vals):
     return sum(vals) / len(vals) if vals else 0
 
 
+RESCUE_TPM_THRESHOLD = 1.0   # mean TPM to rescue sub-threshold genes
+
+
+def parse_quant_sf(path):
+    """Parse a Salmon quant.sf file → dict {Name: TPM}."""
+    tpms = {}
+    with open(path) as fh:
+        header = fh.readline()  # skip header
+        for line in fh:
+            parts = line.split("\t")
+            tpms[parts[0]] = float(parts[3])   # Name, Length, EffLen, TPM, NumReads
+    return tpms
+
+
+def load_expression(quant_dirs):
+    """Load Salmon quant.sf from each directory → per-gene mean TPM.
+
+    Parameters
+    ----------
+    quant_dirs : str
+        Comma-separated list of directories, each containing ``quant.sf``.
+
+    Returns
+    -------
+    dict  {gene_id: mean_tpm}
+    """
+    all_tpms = {}          # gene_id → [tpm_sample1, tpm_sample2, ...]
+    dirs = [d.strip() for d in quant_dirs.split(",") if d.strip()]
+    n_samples = 0
+    for d in dirs:
+        sf = os.path.join(d, "quant.sf")
+        if not os.path.isfile(sf):
+            print(f"WARNING: {sf} not found, skipping", file=sys.stderr)
+            continue
+        n_samples += 1
+        for gene_id, tpm in parse_quant_sf(sf).items():
+            all_tpms.setdefault(gene_id, []).append(tpm)
+    # Genes missing from a sample get TPM=0 for that sample
+    gene_means = {}
+    for gene_id, tpm_list in all_tpms.items():
+        # pad with zeros for samples where the gene was absent
+        while len(tpm_list) < n_samples:
+            tpm_list.append(0.0)
+        gene_means[gene_id] = sum(tpm_list) / n_samples
+    print(f"Expression: loaded {n_samples} samples, {len(gene_means):,} genes with TPM data")
+    return gene_means
+
+
 # ---------------------------------------------------------------------------
 #  Main
 # ---------------------------------------------------------------------------
@@ -84,12 +153,21 @@ def main():
     ap.add_argument("--gmst-faa", required=True)
     ap.add_argument("--gmst-map", required=True)
     ap.add_argument("--gmst-psauron", required=True)
+    ap.add_argument("--salmon-quants", default=None,
+                    help="Comma-separated Salmon quant directories")
     ap.add_argument("--min-psauron", type=float, default=0.3)
     ap.add_argument("--species", required=True)
     args = ap.parse_args()
 
     min_ps = args.min_psauron
     species = args.species
+
+    # --- Load expression data (if provided) ---
+    gene_tpms = {}
+    has_expression = False
+    if args.salmon_quants:
+        gene_tpms = load_expression(args.salmon_quants)
+        has_expression = bool(gene_tpms)
 
     # --- Parse TD2 proteins and scores ---
     td2_seqs = {}
@@ -144,6 +222,8 @@ def main():
     # Counters
     source_counts = {}
     n_filtered = 0
+    n_rescued = 0
+    n_zero_expr_dropped = 0
     n_total = 0
 
     # Per-predictor stats
@@ -156,15 +236,20 @@ def main():
     with open(f"{species}.faa", "w") as faa, \
          open("merge_map.tsv", "w") as mapf:
 
-        mapf.write("gene_id\tsource\tprotein_length\tpsauron_score\tcompleteness\t"
+        mapf.write("gene_id\tsource\tprotein_length\tpsauron_score\tcompleteness\tmean_tpm\t"
                    "td2_length\ttd2_psauron\ttd2_compl\t"
                    "metaeuk_length\tmetaeuk_psauron\tmetaeuk_compl\t"
                    "gmst_length\tgmst_psauron\tgmst_compl\n")
 
         for gene_id in all_genes:
-            # Collect candidates: (source, seq, psauron, completeness)
-            candidates = []
+            gene_tpm = gene_tpms.get(gene_id, 0.0)
 
+            # Drop genes with zero expression (if expression data available)
+            if has_expression and gene_tpm == 0.0:
+                n_zero_expr_dropped += 1
+                continue
+
+            # Collect candidates: (source, seq, psauron, completeness)
             td2_seq = td2_seqs.get(gene_id)
             td2_ps = td2_scores.get(gene_id, 0.0)
             td2_c = td2_compl.get(gene_id, "unknown")
@@ -180,6 +265,8 @@ def main():
             gm_c = gmst_compl.get(gene_id, "unknown")
             gm_len = len(gm_seq) if gm_seq else 0
 
+            # Standard filtering: PSAURON >= threshold
+            candidates = []
             if td2_seq and td2_ps >= min_ps:
                 candidates.append(("td2", td2_seq, td2_ps, td2_c))
             if met_seq and met_ps >= min_ps:
@@ -187,13 +274,29 @@ def main():
             if gm_seq and gm_ps >= min_ps:
                 candidates.append(("gmst", gm_seq, gm_ps, gm_c))
 
+            rescued = False
+            if not candidates:
+                # Expression rescue: accept best candidate if gene has TPM >= threshold
+                if has_expression and gene_tpm >= RESCUE_TPM_THRESHOLD:
+                    all_cands = []
+                    if td2_seq:
+                        all_cands.append(("td2", td2_seq, td2_ps, td2_c))
+                    if met_seq:
+                        all_cands.append(("metaeuk", met_seq, met_ps, met_c))
+                    if gm_seq:
+                        all_cands.append(("gmst", gm_seq, gm_ps, gm_c))
+                    if all_cands:
+                        candidates = all_cands
+                        rescued = True
+                        n_rescued += 1
+
             if not candidates:
                 n_filtered += 1
                 continue
 
-            # Rank: completeness (complete > partial) → PSAURON → length
+            # Rank: completeness → PSAURON → expression (mean TPM) → length
             candidates.sort(
-                key=lambda x: (COMPL_RANK.get(x[3], 0), x[2], len(x[1])),
+                key=lambda x: (COMPL_RANK.get(x[3], 0), x[2], gene_tpm, len(x[1])),
                 reverse=True
             )
             winner_src, winner_seq, winner_ps, winner_c = candidates[0]
@@ -205,10 +308,14 @@ def main():
             else:
                 source_label = f"{'_'.join(sorted(c[0] for c in candidates))}_{winner_src}"
 
+            if rescued:
+                source_label += "_rescued"
+
             source_counts[source_label] = source_counts.get(source_label, 0) + 1
 
             faa.write(f">{gene_id}\n{winner_seq}\n")
             mapf.write(f"{gene_id}\t{source_label}\t{len(winner_seq)}\t{winner_ps:.4f}\t{winner_c}\t"
+                       f"{gene_tpm:.4f}\t"
                        f"{td2_len}\t{td2_ps:.4f}\t{td2_c}\t"
                        f"{met_len}\t{met_ps:.4f}\t{met_c}\t"
                        f"{gm_len}\t{gm_ps:.4f}\t{gm_c}\n")
@@ -228,18 +335,28 @@ def main():
 
     # --- Statistics ---
     # Count genes where each predictor was the sole provider
-    n_td2_only     = source_counts.get("td2", 0)
-    n_metaeuk_only = source_counts.get("metaeuk", 0)
-    n_gmst_only    = source_counts.get("gmst", 0)
-    n_multi = sum(v for k, v in source_counts.items()
-                  if k not in ("td2", "metaeuk", "gmst"))
+    n_td2_only     = sum(v for k, v in source_counts.items() if k.replace("_rescued", "") == "td2")
+    n_metaeuk_only = sum(v for k, v in source_counts.items() if k.replace("_rescued", "") == "metaeuk")
+    n_gmst_only    = sum(v for k, v in source_counts.items() if k.replace("_rescued", "") == "gmst")
+    n_multi = n_total - n_td2_only - n_metaeuk_only - n_gmst_only
 
     stats = f"""Merge statistics (min_psauron={min_ps})
 Genes with TD2 prediction:       {len(td2_seqs):>10,}
 Genes with MetaEuk prediction:   {len(metaeuk_seqs):>10,}
 Genes with GeneMarkS-T prediction: {len(gmst_seqs):>10,}
 Genes in union:                  {len(all_genes):>10,}
+"""
 
+    if has_expression:
+        stats += f"""
+Expression data:
+  Samples loaded:                {len([d for d in args.salmon_quants.split(',') if d.strip()]):>10}
+  Genes with expression data:    {len(gene_tpms):>10,}
+  Zero-expression genes dropped: {n_zero_expr_dropped:>10,}
+  Expression-rescued genes:      {n_rescued:>10,}
+"""
+
+    stats += f"""
 After PSAURON filtering + completeness ranking:
   TD2-only genes:                {n_td2_only:>10,}
   MetaEuk-only genes:            {n_metaeuk_only:>10,}

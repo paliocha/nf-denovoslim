@@ -14,6 +14,8 @@ process THINNING_REPORT {
     path(initial_quant_dirs)
     path(final_quant_dirs)
     path(busco_trinity_summary)
+    path(busco_reps_summary)
+    path(busco_corrected_summary)
     path(busco_final_summary)
     path(id_validation)
     path(sortmerna_logs, stageAs: 'sortmerna_??.log')
@@ -42,6 +44,8 @@ process THINNING_REPORT {
         --initial-quants   ${init_dirs} \\
         --final-quants     ${final_dirs} \\
         --busco-trinity    ${busco_trinity_summary} \\
+        --busco-reps       ${busco_reps_summary} \\
+        --busco-corrected  ${busco_corrected_summary} \\
         --busco-final      ${busco_final_summary} \\
         --id-validation    ${id_validation} \\
         --sortmerna-logs   ${log_files} \\
