@@ -37,6 +37,7 @@ include { VALIDATE_IDS                     } from './modules/validate_ids'
 include { BUSCO as BUSCO_TRINITY           } from './modules/busco'
 include { BUSCO as BUSCO_QC                } from './modules/busco'
 include { TRANSANNOT                       } from './modules/transannot'
+include { DECONTAMINATE_TRINITY            } from './modules/decontaminate_trinity'
 include { THINNING_REPORT                  } from './modules/thinning_report'
 
 // --- Main workflow ---
@@ -147,6 +148,15 @@ workflow {
     )
 
     MMSEQS2_CLUSTER(MMSEQS2_TAXONOMY.out.fasta, params.species_label)
+
+    // -- Decontaminated Trinity (all isoforms from clean clusters) --
+
+    DECONTAMINATE_TRINITY(
+        ch_trinity,
+        CORSET.out.clust,
+        MMSEQS2_TAXONOMY.out.fasta,
+        params.species_label
+    )
 
     // -- Frameshift correction --
 
