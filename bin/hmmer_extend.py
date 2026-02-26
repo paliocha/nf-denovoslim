@@ -247,7 +247,7 @@ def main():
     alphabet = Alphabet.amino()
     digital_targets = []
     for orf_name, orf_seq in orf_seqs.items():
-        ts = TextSequence(name=orf_name.encode(), sequence=orf_seq)
+        ts = TextSequence(name=orf_name, sequence=orf_seq)
         digital_targets.append(ts.digitize(alphabet))
 
     print(f"Prepared {len(digital_targets):,} digital sequences",
@@ -272,15 +272,16 @@ def main():
             for hit in top_hits:
                 if not hit.included:
                     continue
-                orf_name = hit.name.decode()
+                orf_name = hit.name if isinstance(hit.name, str) else hit.name.decode()
                 gene_id = orf_name.split('::')[0]
+                qname = top_hits.query_name if isinstance(top_hits.query_name, str) else top_hits.query_name.decode()
 
                 for domain in hit.domains:
                     if not domain.included:
                         continue
                     gene_hits[gene_id].append({
                         'orf_name': orf_name,
-                        'domain': top_hits.query_name.decode(),
+                        'domain': qname,
                         'env_from': domain.env_from,
                         'env_to': domain.env_to,
                         'i_evalue': domain.i_evalue,
