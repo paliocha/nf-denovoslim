@@ -13,7 +13,7 @@ Merge strategy (per gene):
     2. Collect predictions from all sources that pass PSAURON >= min_psauron.
        Rescue: if no prediction passes but the gene has mean TPM >= 1,
        accept the best prediction even below the threshold (expression rescue).
-    3. Rank by: completeness → PSAURON → expression (mean TPM) → protein length.
+    3. Rank by: completeness → protein length → PSAURON → expression (mean TPM).
     4. Pick the top-ranked prediction.
 
 Outputs:
@@ -294,9 +294,9 @@ def main():
                 n_filtered += 1
                 continue
 
-            # Rank: completeness → PSAURON → expression (mean TPM) → length
+            # Rank: completeness → length → PSAURON → expression (mean TPM)
             candidates.sort(
-                key=lambda x: (COMPL_RANK.get(x[3], 0), x[2], gene_tpm, len(x[1])),
+                key=lambda x: (COMPL_RANK.get(x[3], 0), len(x[1]), x[2], gene_tpm),
                 reverse=True
             )
             winner_src, winner_seq, winner_ps, winner_c = candidates[0]

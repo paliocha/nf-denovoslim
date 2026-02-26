@@ -1,6 +1,6 @@
 /*
  * MERGE_PREDICTIONS — merge TD2 + MetaEuk + GeneMarkS-T into a single
- * best-per-gene protein set.  Ranks: completeness → PSAURON → length.
+ * best-per-gene protein set.  Ranks: completeness → length → PSAURON.
  */
 
 process MERGE_PREDICTIONS {

@@ -100,7 +100,7 @@ Trinity.fasta + Reads
 - `bin/` — Python scripts (auto-added to PATH by Nextflow):
   - `select_best_orf.py` — one protein per gene via PSAURON scores + completeness ranking (TD2 branch)
   - `correct_frameshifts.py` — Diamond blastx-guided indel correction
-  - `merge_predictions.py` — 3-way merge of TD2 + MetaEuk + GeneMarkS-T (completeness → PSAURON → length ranking)
+  - `merge_predictions.py` — 3-way merge of TD2 + MetaEuk + GeneMarkS-T (completeness → length → PSAURON ranking)
   - `select_representative.py` — longest transcript per Corset cluster
   - `metaeuk_select_best.py` — best MetaEuk protein per gene (score ranking)
   - `gmst_select_best.py` — best GeneMarkS-T ORF per gene (completeness → length ranking)
@@ -144,7 +144,7 @@ Three predictors run in parallel on frameshift-corrected representatives:
 2. **MetaEuk** — profile-based homology search against SwissProt. Best protein per gene selected by `metaeuk_select_best.py` (score ranking).
 3. **GeneMarkS-T** — ab initio self-training (single-threaded, 1 CPU). Best ORF per gene selected by `gmst_select_best.py` (completeness → length).
 
-All three are PSAURON-scored and merged by `merge_predictions.py` with ranking: **completeness → PSAURON → length**. Minimum PSAURON threshold `--min_psauron 0.3`.
+All three are PSAURON-scored and merged by `merge_predictions.py` with ranking: **completeness → length → PSAURON**. Minimum PSAURON threshold `--min_psauron 0.3`.
 
 ### TD2 Strategy Presets
 

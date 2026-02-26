@@ -37,7 +37,7 @@ Three ORF predictors run in parallel on frameshift-corrected representative tran
 2. **MetaEuk** — profile-based homology search against SwissProt. Best protein per gene selected by `metaeuk_select_best.py` (score ranking).
 3. **GeneMarkS-T** — ab initio self-training gene finder (single-threaded). Best ORF per gene selected by `gmst_select_best.py` (completeness → length ranking).
 
-All three predictors' outputs are PSAURON-scored independently, then merged by `merge_predictions.py` with ranking: **completeness → PSAURON score → sequence length**. Predictions below `--min_psauron 0.3` are discarded. The merged protein set is then deduplicated at 95% amino acid identity via MMseqs2 clustering to remove near-identical proteins from different predictors.
+All three predictors' outputs are PSAURON-scored independently, then merged by `merge_predictions.py` with ranking: **completeness → protein length → PSAURON score**. This prioritises longer proteins to avoid selecting short internal ORFs when a homology-supported full-length prediction exists. Predictions below `--min_psauron 0.3` are discarded. Genes with zero expression across all samples are dropped; genes below the PSAURON threshold but with mean TPM ≥ 1 are rescued. The merged protein set is then deduplicated at 95% amino acid identity via MMseqs2 clustering to remove near-identical proteins from different predictors.
 
 ### TD2 ORF prediction tuning
 
@@ -93,7 +93,7 @@ Protein-mode BUSCO is the definitive quality metric because (a) it operates dire
 | 6b | ORF prediction (profile-based) | MetaEuk (vs SwissProt) |
 | 6c | ORF prediction (ab initio) | GeneMarkS-T |
 | 7 | PSAURON scoring (each predictor) | TD2 / PSAURON |
-| 8 | 3-way merge (completeness → PSAURON → length) | Python/BioPython |
+| 8 | 3-way merge (completeness → length → PSAURON) | Python/BioPython |
 | 8b | Protein dedup (95% aa identity) | MMseqs2 cluster |
 | 9 | Gene-level quantification | Salmon 1.10.3 |
 | 10 | Protein completeness | BUSCO v6 (protein mode) |
