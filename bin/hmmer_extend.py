@@ -254,6 +254,12 @@ def main():
           file=sys.stderr)
 
     # ── hmmsearch: stream Pfam profiles against 6-frame ORFs ──────────
+    #
+    # pyhmmer 0.12 API:
+    #   - TopHits.query      → the HMM object (query_name removed in 0.11)
+    #   - Hit.name           → str (was bytes before 0.12)
+    #   - Domain.env_from/to → int, 1-based envelope coordinates
+    #   - Domain.i_evalue    → float, independent e-value
     gene_hits = defaultdict(list)      # gene_id -> [hit_dicts]
     n_hmms = 0
 
@@ -269,19 +275,21 @@ def main():
                 print(f"  {n_hmms:,} profiles searched...",
                       file=sys.stderr)
 
+            # Get profile name via TopHits.query (the HMM object)
+            hmm_name = top_hits.query.name
+
             for hit in top_hits:
                 if not hit.included:
                     continue
-                orf_name = hit.name if isinstance(hit.name, str) else hit.name.decode()
+                orf_name = hit.name
                 gene_id = orf_name.split('::')[0]
-                qname = top_hits.query_name if isinstance(top_hits.query_name, str) else top_hits.query_name.decode()
 
                 for domain in hit.domains:
                     if not domain.included:
                         continue
                     gene_hits[gene_id].append({
                         'orf_name': orf_name,
-                        'domain': qname,
+                        'domain': hmm_name,
                         'env_from': domain.env_from,
                         'env_to': domain.env_to,
                         'i_evalue': domain.i_evalue,
