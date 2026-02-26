@@ -32,6 +32,7 @@ include { PSAURON_METAEUK                  } from './modules/psauron_metaeuk'
 include { GMST_PREDICT                     } from './modules/gmst'
 include { PSAURON_GMST                     } from './modules/psauron_gmst'
 include { MERGE_PREDICTIONS                } from './modules/merge_predictions'
+include { HMMER_EXTEND                     } from './modules/hmmer_extend'
 include { MMSEQS2_CLUSTER_PROTEIN           } from './modules/mmseqs2_cluster_protein'
 include { VALIDATE_IDS                     } from './modules/validate_ids'
 include { BUSCO as BUSCO_TRINITY           } from './modules/busco'
@@ -241,9 +242,23 @@ workflow {
         params.species_label
     )
 
+    // -- HMMER domain-guided protein extension / rescue --
+
+    if (params.pfam_hmm) {
+        HMMER_EXTEND(
+            MERGE_PREDICTIONS.out.faa,
+            CORRECT_FRAMESHIFTS.out.fasta,
+            params.pfam_hmm,
+            params.species_label
+        )
+        ch_proteins_for_dedup = HMMER_EXTEND.out.faa
+    } else {
+        ch_proteins_for_dedup = MERGE_PREDICTIONS.out.faa
+    }
+
     // -- Protein-level dedup (95% aa identity) --
 
-    MMSEQS2_CLUSTER_PROTEIN(MERGE_PREDICTIONS.out.faa, params.species_label)
+    MMSEQS2_CLUSTER_PROTEIN(ch_proteins_for_dedup, params.species_label)
 
     // -- ID validation --
 

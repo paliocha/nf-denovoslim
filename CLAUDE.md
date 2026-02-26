@@ -37,7 +37,7 @@ Work dirs: `$PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/{BMAX,
 
 ## Architecture
 
-### Pipeline Flow (28 processes)
+### Pipeline Flow (29 processes)
 
 ```
 Trinity.fasta + Reads
@@ -73,6 +73,9 @@ Trinity.fasta + Reads
     │       │       all three ──► MERGE_PREDICTIONS
     │       │                       │
     │       │                       ▼
+    │       │               HMMER_EXTEND (Pfam domain-guided, optional)
+    │       │                       │
+    │       │                       ▼
     │       │               MMSEQS2_CLUSTER_PROTEIN (95% aa dedup)
     │       │                       │
     │       │               ┌───────┴────────┐
@@ -96,7 +99,7 @@ Trinity.fasta + Reads
 - `conf/base.config` — Per-process CPU/memory/time via `withName:`. TD2 strategy closures. publishDir rules.
 - `conf/orion.config` — Orion HPC site config (SLURM, bind mounts, group quota, scratch)
 - `lib/Utils.groovy` — `validateParams()` (fail-fast on missing required params), `extractCondition()` (sample name → condition)
-- `modules/*.nf` — One process per file (20 module files, 28 process instances via aliasing)
+- `modules/*.nf` — One process per file (21 module files, 29 process instances via aliasing)
 - `bin/` — Python scripts (auto-added to PATH by Nextflow):
   - `select_best_orf.py` — one protein per gene via PSAURON scores + completeness ranking (TD2 branch)
   - `correct_frameshifts.py` — Diamond blastx-guided indel correction
@@ -104,6 +107,7 @@ Trinity.fasta + Reads
   - `select_representative.py` — longest transcript per Corset cluster
   - `metaeuk_select_best.py` — best MetaEuk protein per gene (score ranking)
   - `gmst_select_best.py` — best GeneMarkS-T ORF per gene (completeness → length ranking)
+  - `hmmer_extend.py` — Pfam domain-guided protein extension/rescue via pyhmmer (post-merge; integrates 6-frame translation, hmmsearch, extension/rescue in one script)
   - `thinning_report.py` — pipeline summary statistics (argparse, named flags)
 
 ### DSL2 Patterns
@@ -145,6 +149,17 @@ Three predictors run in parallel on frameshift-corrected representatives:
 3. **GeneMarkS-T** — ab initio self-training (single-threaded, 1 CPU). Best ORF per gene selected by `gmst_select_best.py` (completeness → length).
 
 All three are PSAURON-scored and merged by `merge_predictions.py` with ranking: **completeness → length → PSAURON**. Minimum PSAURON threshold `--min_psauron 0.3`.
+
+### HMMER Protein Extension (Optional)
+
+When `--pfam_hmm` is provided (path to Pfam-A.hmm), `HMMER_EXTEND` runs after `MERGE_PREDICTIONS` and before `MMSEQS2_CLUSTER_PROTEIN`:
+
+1. **6-frame translate** all corrected representative transcripts → ORFs (split at stops, ≥30 aa) — in memory
+2. **hmmsearch** Pfam-A.hmm (~20K profiles) against 6-frame ORFs — via pyhmmer (no intermediate files)
+3. **Extend**: if a Pfam domain hit on the transcript supports a protein ≥1.1× longer than the current merged prediction, replace it
+4. **Rescue**: if a gene has no merged protein but has a Pfam domain hit with ORF ≥50 aa, add it
+
+Uses pyhmmer (Cython HMMER3 bindings) in a single Python script — no CLI hmmsearch, no intermediate files, no text parsing, no hmmpress required. CPU-bound, ~4–8h with 32 cores. Database: `Pfam-A.hmm` from InterPro/EBI (~1.5 GB, download with `scripts/download_pfam.sh`).
 
 ### TD2 Strategy Presets
 
@@ -206,3 +221,5 @@ Orion's site sbatch wrapper (`/cluster/software/slurm/site/bin/sbatch`) injects 
 8. **GeneMarkS-T is single-threaded** — `gmst.pl` has no threading. 1 CPU allocated. Runs ~1-2h total on ~150-200K sequences.
 9. **Container map invalidates -resume cache** — changing the container assignment mechanism (e.g. `params.x_container` → `img.x`) changes the process hash even if the resolved image string is identical. This breaks `-resume` for all cached tasks.
 10. **Protein dedup is post-merge** — `MMSEQS2_CLUSTER_PROTEIN` runs at 95% aa identity after the 3-way merge, removing near-identical proteins from different predictors that survived the per-gene best-selection.
+11. **HMMER_EXTEND is optional** — only runs when `--pfam_hmm` is provided. When null (default), proteins go directly from MERGE_PREDICTIONS to MMSEQS2_CLUSTER_PROTEIN. The conditional wiring uses `if (params.pfam_hmm)` in main.nf.
+12. **pyhmmer reads plain .hmm files** — no `hmmpress` needed. pyhmmer can also use pressed databases (`.h3m`/`.h3i`/`.h3f`/`.h3p`) if present, but they are not required. Just download `Pfam-A.hmm` and point `--pfam_hmm` at it.
