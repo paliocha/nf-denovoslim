@@ -43,7 +43,7 @@ From: ubuntu:24.04
     mkdir build && cd build
     cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local \
              -DCMAKE_BUILD_TYPE=Release \
-             -DIGRAPH_OPENMP_SUPPORT=ON \
+             -DIGRAPH_OPENMP_SUPPORT=OFF \
              -DIGRAPH_ENABLE_TLS=ON \
              -DBUILD_SHARED_LIBS=ON
     make -j$(nproc)
@@ -54,7 +54,7 @@ From: ubuntu:24.04
     # ---------- build corset ----------
     cd /opt/corset
     autoconf configure.in > configure && chmod +x configure
-    ./configure --with-htslib=/usr/local --with-igraph=/usr/local
+    ./configure --with-htslib=/usr/local --with-igraph=/usr/local --enable-native
     make clean
     make -j$(nproc)
     make install prefix=/usr/local
@@ -83,11 +83,12 @@ From: ubuntu:24.04
       -t <int>                 Threads (default: OMP_NUM_THREADS)
       --algorithm <str>        hierarchical (default), leiden, or both
       --lrt-softness <float>   Sigmoid LRT decay (Leiden only, default: 0)
-      --knn <int|auto>         kNN graph sparsification (Leiden only)
+      --knn <int|auto>         kNN graph sparsification (Leiden only, default: auto)
+      --no-knn                 Disable kNN sparsification (use full edge graph)
       --version, -v            Print version and exit
       --help, -h               Print usage and exit
 
-    Usage:  corset --algorithm leiden --knn auto \
+    Usage:  corset --algorithm leiden \
                   -d 0.3 -t 16 -i salmon_eq_classes \
                   -g group1,group1,group2,group2 \
                   -p my_prefix eq_class_1.sf eq_class_2.sf ...

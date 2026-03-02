@@ -25,7 +25,7 @@ process LOCUS_CLUSTER {
     script:
     def max_intron   = params.locus_max_intron   ?: 200000
     def min_coverage = params.locus_min_coverage ?: 0.5
-    def min_identity = params.locus_min_identity ?: 0.7
+    def min_mapq     = params.locus_min_mapq     ?: 5
     """
     locus_cluster.py \\
         --paf ${paf} \\
@@ -35,6 +35,6 @@ process LOCUS_CLUSTER {
         --stats locus_stats.txt \\
         --max-intron ${max_intron} \\
         --min-coverage ${min_coverage} \\
-        --min-identity ${min_identity}
+        --min-mapq ${min_mapq}
     """
 }

@@ -16,8 +16,13 @@ from collections import defaultdict
 from Bio import SeqIO
 
 
-def parse_paf(paf_file, min_coverage, min_identity):
+def parse_paf(paf_file, min_coverage, min_mapq):
     """Parse PAF file and return dict of query -> best alignment info.
+
+    Filters on query coverage and mapping quality (mapq).  We do NOT
+    filter on nucleotide identity (matches/block_len) because cross-genus
+    divergence makes that metric unreliable — diverged orthologs can have
+    <40% nt identity yet still map uniquely (mapq=60).
 
     PAF format (tab-separated):
         0  query name
@@ -55,10 +60,8 @@ def parse_paf(paf_file, min_coverage, min_identity):
 
             # Coverage: fraction of query aligned
             coverage = (qend - qstart) / qlen if qlen > 0 else 0
-            # Identity: matching bases / alignment block length
-            identity = matches / block_len if block_len > 0 else 0
 
-            if coverage < min_coverage or identity < min_identity:
+            if coverage < min_coverage or mapq < min_mapq:
                 continue
 
             # Keep best alignment per query (most matching bases)
@@ -70,7 +73,6 @@ def parse_paf(paf_file, min_coverage, min_identity):
                     'tend': tend,
                     'qlen': qlen,
                     'coverage': coverage,
-                    'identity': identity,
                     'mapq': mapq,
                     'matches': matches,
                 }
@@ -179,13 +181,15 @@ def main():
     parser.add_argument('--min-coverage', type=float, default=0.5,
                         help='Min query coverage to accept an alignment '
                              '[default: 0.5]')
-    parser.add_argument('--min-identity', type=float, default=0.7,
-                        help='Min alignment identity (matches/block_len) '
-                             '[default: 0.7]')
+    parser.add_argument('--min-mapq', type=int, default=5,
+                        help='Min mapping quality (0-255) to accept an '
+                             'alignment.  mapq=60 is unique; mapq>=5 '
+                             'allows multi-mappers with a clear best '
+                             '[default: 5]')
     args = parser.parse_args()
 
     # --- Parse PAF ---
-    alignments = parse_paf(args.paf, args.min_coverage, args.min_identity)
+    alignments = parse_paf(args.paf, args.min_coverage, args.min_mapq)
     print(f"Accepted alignments: {len(alignments)}", file=sys.stderr)
 
     # --- Read all transcript IDs ---
