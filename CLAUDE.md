@@ -37,7 +37,7 @@ Work dirs: `$PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/{BMAX,
 
 ## Architecture
 
-### Pipeline Flow (29 processes)
+### Pipeline Flow (31 processes)
 
 ```
 Trinity.fasta + Reads
@@ -57,6 +57,9 @@ Trinity.fasta + Reads
     │       │
     │       ▼
     │   MMSEQS2_CLUSTER (95% nt dedup)
+    │       │
+    │       ▼
+    │   [MINIMAP2_SPLICE ──► LOCUS_CLUSTER] (optional, --reference_genome)
     │       │
     │       ▼
     │   DIAMOND_BLASTX ──► CORRECT_FRAMESHIFTS
@@ -221,5 +224,9 @@ Orion's site sbatch wrapper (`/cluster/software/slurm/site/bin/sbatch`) injects 
 8. **GeneMarkS-T is single-threaded** — `gmst.pl` has no threading. 1 CPU allocated. Runs ~1-2h total on ~150-200K sequences.
 9. **Container map invalidates -resume cache** — changing the container assignment mechanism (e.g. `params.x_container` → `img.x`) changes the process hash even if the resolved image string is identical. This breaks `-resume` for all cached tasks.
 10. **Protein dedup is post-merge** — `MMSEQS2_CLUSTER_PROTEIN` runs at 95% aa identity after the 3-way merge, removing near-identical proteins from different predictors that survived the per-gene best-selection.
+11. **HMMER_EXTEND is optional** — only runs when `--pfam_hmm` is provided. When null (default), proteins go directly from MERGE_PREDICTIONS to MMSEQS2_CLUSTER_PROTEIN. The conditional wiring uses `if (params.pfam_hmm)` in main.nf.
+12. **pyhmmer reads plain .hmm files** — no `hmmpress` needed. pyhmmer can also use pressed databases (`.h3m`/`.h3i`/`.h3f`/`.h3p`) if present, but they are not required. Just download `Pfam-A.hmm` and point `--pfam_hmm` at it.
+13. **Locus clustering is optional** — only runs when `--reference_genome` is provided. Uses minimap2 `-x splice` to map representatives to the genome, then groups overlapping alignments into loci and picks one transcript per locus. Unmapped transcripts are retained. For cross-genus mapping (e.g., BMED → Briza maxima), `--locus_min_identity 0.7` accepts alignments at ≥70% identity. The step sits between MMSEQS2_CLUSTER and DIAMOND_BLASTX.
+14. **Locus clustering breaks -resume for downstream** — adding `--reference_genome` changes the input to DIAMOND_BLASTX (from MMSEQS2_CLUSTER to LOCUS_CLUSTER output), invalidating all cached downstream tasks.
 11. **HMMER_EXTEND is optional** — only runs when `--pfam_hmm` is provided. When null (default), proteins go directly from MERGE_PREDICTIONS to MMSEQS2_CLUSTER_PROTEIN. The conditional wiring uses `if (params.pfam_hmm)` in main.nf.
 12. **pyhmmer reads plain .hmm files** — no `hmmpress` needed. pyhmmer can also use pressed databases (`.h3m`/`.h3i`/`.h3f`/`.h3p`) if present, but they are not required. Just download `Pfam-A.hmm` and point `--pfam_hmm` at it.

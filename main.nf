@@ -33,6 +33,8 @@ include { GMST_PREDICT                     } from './modules/gmst'
 include { PSAURON_GMST                     } from './modules/psauron_gmst'
 include { MERGE_PREDICTIONS                } from './modules/merge_predictions'
 include { HMMER_EXTEND                     } from './modules/hmmer_extend'
+include { MINIMAP2_SPLICE                   } from './modules/minimap2'
+include { LOCUS_CLUSTER                     } from './modules/locus_cluster'
 include { MMSEQS2_CLUSTER_PROTEIN           } from './modules/mmseqs2_cluster_protein'
 include { VALIDATE_IDS                     } from './modules/validate_ids'
 include { BUSCO as BUSCO_TRINITY           } from './modules/busco'
@@ -152,6 +154,19 @@ workflow {
 
     MMSEQS2_CLUSTER(MMSEQS2_TAXONOMY.out.fasta, params.species_label)
 
+    // -- Optional: genome-guided locus clustering (--reference_genome) --
+    // Map representatives to a reference genome with minimap2, then collapse
+    // transcripts that overlap on the same genomic locus.  Unmapped
+    // transcripts are retained.  Skipped when reference_genome is null.
+
+    if (params.reference_genome) {
+        MINIMAP2_SPLICE(MMSEQS2_CLUSTER.out.fasta, params.reference_genome, params.species_label)
+        LOCUS_CLUSTER(MMSEQS2_CLUSTER.out.fasta, MINIMAP2_SPLICE.out.paf, params.species_label)
+        ch_for_diamond = LOCUS_CLUSTER.out.fasta
+    } else {
+        ch_for_diamond = MMSEQS2_CLUSTER.out.fasta
+    }
+
     // -- Decontaminated Trinity (all isoforms from clean clusters) --
 
     DECONTAMINATE_TRINITY(
@@ -163,8 +178,8 @@ workflow {
 
     // -- Frameshift correction --
 
-    DIAMOND_BLASTX(MMSEQS2_CLUSTER.out.fasta, params.diamond_db, params.species_label)
-    CORRECT_FRAMESHIFTS(MMSEQS2_CLUSTER.out.fasta, DIAMOND_BLASTX.out.tsv, params.species_label)
+    DIAMOND_BLASTX(ch_for_diamond, params.diamond_db, params.species_label)
+    CORRECT_FRAMESHIFTS(ch_for_diamond, DIAMOND_BLASTX.out.tsv, params.species_label)
 
     // -- ORF prediction (TD2 + homology support) --
 
