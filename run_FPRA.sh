@@ -38,6 +38,7 @@ nextflow run $PIPELINE_DIR/main.nf \
     --mmseqs2_taxonomy_db $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/UniRef50taxdb \
     --diamond_db $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/uniref50.dmnd \
     --pfam_hmm $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/Pfam-A.hmm \
+    --reference_genome $PROJECTS/FjellheimLab/EGAPx/Lolium_perenne/genome.fna \
     --td2_strategy aggressive \
     --busco_lineage poales_odb12 \
     --filter_taxon 33090 \
