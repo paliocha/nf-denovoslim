@@ -1,10 +1,13 @@
 /*
- * LOCUS_CLUSTER — collapse transcripts that map to the same genomic locus.
+ * LOCUS_CLUSTER — collapse transcripts that map to the same genomic gene/locus.
  *
- * Reads minimap2 PAF alignments, groups transcripts by overlapping genomic
- * coordinates (same chromosome, same strand), picks the best representative
- * per locus (most aligned bases), and retains all unmapped transcripts.
+ * Two modes:
+ *   1. Gene-level (--reference_gff provided): assign each mapped transcript
+ *      to the best-overlapping reference gene, keep one per gene.
+ *   2. Coordinate-overlap fallback (no GFF): merge overlapping alignment
+ *      intervals into ad-hoc loci.
  *
+ * Unmapped transcripts are always retained.
  * Sits between MMSEQS2_CLUSTER (nt dedup) and DIAMOND_BLASTX (frameshift
  * correction).  Only runs when --reference_genome is provided.
  */
@@ -15,6 +18,7 @@ process LOCUS_CLUSTER {
     input:
     path(query_fasta)
     path(paf)
+    val(reference_gff)
     val(species_label)
 
     output:
@@ -26,6 +30,7 @@ process LOCUS_CLUSTER {
     def max_intron   = params.locus_max_intron   ?: 200000
     def min_coverage = params.locus_min_coverage ?: 0.5
     def min_mapq     = params.locus_min_mapq     ?: 5
+    def gff_flag     = reference_gff ? "--gff ${reference_gff}" : ''
     """
     locus_cluster.py \\
         --paf ${paf} \\
@@ -35,6 +40,7 @@ process LOCUS_CLUSTER {
         --stats locus_stats.txt \\
         --max-intron ${max_intron} \\
         --min-coverage ${min_coverage} \\
-        --min-mapq ${min_mapq}
+        --min-mapq ${min_mapq} \\
+        ${gff_flag}
     """
 }

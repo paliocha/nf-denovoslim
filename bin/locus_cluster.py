@@ -1,170 +1,224 @@
 #!/usr/bin/env python3
 """
-locus_cluster.py — Collapse transcripts that map to the same genomic locus.
+locus_cluster.py — Collapse transcripts that map to the same genomic gene/locus.
 
-Reads minimap2 PAF alignments, groups transcripts by overlapping genomic
-coordinates (same chromosome, same strand), picks one representative per
-locus (most aligned bases), and retains all unmapped transcripts.
+Two modes:
+  1. Gene-level (--gff provided): assign each mapped transcript to the
+     reference gene it overlaps most, then pick one transcript per gene.
+  2. Coordinate-overlap fallback (no --gff): merge overlapping alignment
+     intervals into ad-hoc loci.
 
-Designed for cross-genus reference mapping where many transcripts won't
-map, so unmapped transcripts are preserved by default.
+Unmapped transcripts are always retained.
+
+Filters on mapping quality (mapq) and query coverage — NOT nucleotide
+identity, which is unreliable for cross-genus mapping.
 """
 
 import argparse
+import bisect
+import re
 import sys
 from collections import defaultdict
 from Bio import SeqIO
 
 
+# ── PAF parsing ──────────────────────────────────────────────────────
+
 def parse_paf(paf_file, min_coverage, min_mapq):
-    """Parse PAF file and return dict of query -> best alignment info.
-
-    Filters on query coverage and mapping quality (mapq).  We do NOT
-    filter on nucleotide identity (matches/block_len) because cross-genus
-    divergence makes that metric unreliable — diverged orthologs can have
-    <40% nt identity yet still map uniquely (mapq=60).
-
-    PAF format (tab-separated):
-        0  query name
-        1  query length
-        2  query start (0-based)
-        3  query end
-        4  strand (+/-)
-        5  target name
-        6  target length
-        7  target start (0-based)
-        8  target end
-        9  number of matching bases
-        10 alignment block length
-        11 mapping quality (0-255)
-    """
+    """Parse PAF, keep best hit per query.  Filter on coverage + mapq."""
     alignments = {}
-
     with open(paf_file) as fh:
         for line in fh:
-            fields = line.rstrip('\n').split('\t')
-            if len(fields) < 12:
+            f = line.rstrip('\n').split('\t')
+            if len(f) < 12:
                 continue
+            query  = f[0]
+            qlen   = int(f[1])
+            qstart = int(f[2])
+            qend   = int(f[3])
+            strand = f[4]
+            target = f[5]
+            tstart = int(f[7])
+            tend   = int(f[8])
+            matches = int(f[9])
+            mapq   = int(f[11])
 
-            query = fields[0]
-            qlen = int(fields[1])
-            qstart = int(fields[2])
-            qend = int(fields[3])
-            strand = fields[4]
-            target = fields[5]
-            tstart = int(fields[7])
-            tend = int(fields[8])
-            matches = int(fields[9])
-            block_len = int(fields[10])
-            mapq = int(fields[11])
-
-            # Coverage: fraction of query aligned
             coverage = (qend - qstart) / qlen if qlen > 0 else 0
-
             if coverage < min_coverage or mapq < min_mapq:
                 continue
 
-            # Keep best alignment per query (most matching bases)
             if query not in alignments or matches > alignments[query]['matches']:
-                alignments[query] = {
-                    'target': target,
-                    'strand': strand,
-                    'tstart': tstart,
-                    'tend': tend,
-                    'qlen': qlen,
-                    'coverage': coverage,
-                    'mapq': mapq,
-                    'matches': matches,
-                }
-
+                alignments[query] = dict(
+                    target=target, strand=strand, tstart=tstart, tend=tend,
+                    qlen=qlen, coverage=coverage, mapq=mapq, matches=matches,
+                )
     return alignments
 
 
-def merge_loci(alignments, max_gap):
-    """Group overlapping/nearby alignments into genomic loci.
+# ── GFF gene parsing ────────────────────────────────────────────────
 
-    Two alignments are in the same locus if they are on the same
-    chromosome, same strand, and their genomic intervals overlap or
-    are within max_gap bp of each other.
+def parse_gff_genes(gff_file):
+    """Parse gene records from GFF3, return sorted interval lists per
+    (chrom, strand) keyed dict.
+
+    Returns:
+        genes_by_cs: dict of (chrom, strand) -> list of (start, end, gene_id)
+                     sorted by start coordinate for bisect lookup.
     """
-    # Group by (target chromosome, strand)
-    by_chrom_strand = defaultdict(list)
+    genes_by_cs = defaultdict(list)
+    id_re = re.compile(r'ID=([^;]+)')
+
+    with open(gff_file) as fh:
+        for line in fh:
+            if line.startswith('#'):
+                continue
+            f = line.rstrip('\n').split('\t')
+            if len(f) < 9 or f[2] != 'gene':
+                continue
+            chrom  = f[0]
+            start  = int(f[3]) - 1   # GFF is 1-based → 0-based
+            end    = int(f[4])        # GFF end is inclusive → exclusive
+            strand = f[6]
+            m = id_re.search(f[8])
+            if not m:
+                continue
+            gene_id = m.group(1)
+            # strip "gene-" prefix if present (EGAPx convention)
+            if gene_id.startswith('gene-'):
+                gene_id = gene_id[5:]
+            genes_by_cs[(chrom, strand)].append((start, end, gene_id))
+
+    # Sort by start for binary search
+    for key in genes_by_cs:
+        genes_by_cs[key].sort()
+
+    n_genes = sum(len(v) for v in genes_by_cs.values())
+    print(f"Parsed {n_genes} genes from GFF across "
+          f"{len(genes_by_cs)} chrom/strand groups", file=sys.stderr)
+    return genes_by_cs
+
+
+def assign_to_genes(alignments, genes_by_cs):
+    """Assign each alignment to the best-overlapping reference gene.
+
+    For each mapped transcript, find all genes on the same chrom/strand
+    that overlap the alignment interval, pick the gene with the largest
+    overlap.  Transcripts that don't overlap any gene go to 'intergenic'.
+
+    Returns:
+        gene_members: dict of gene_id -> list of transcript IDs
+        tx_to_gene:   dict of transcript_id -> gene_id
+    """
+    gene_members = defaultdict(list)
+    tx_to_gene = {}
+
     for qname, aln in alignments.items():
         key = (aln['target'], aln['strand'])
-        by_chrom_strand[key].append((aln['tstart'], aln['tend'], qname))
+        genes = genes_by_cs.get(key, [])
+        if not genes:
+            # Also try without strand (some GFF genes may be strandless,
+            # or transcript mapped to opposite strand of a gene)
+            gene_members['intergenic'].append(qname)
+            tx_to_gene[qname] = 'intergenic'
+            continue
 
-    loci = []
+        # Binary search: find genes whose start <= aln['tend']
+        # and end >= aln['tstart'] (overlap condition)
+        starts = [g[0] for g in genes]
+        # Rightmost gene that could overlap: start < tend
+        right_idx = bisect.bisect_left(starts, aln['tend'])
+
+        best_gene = None
+        best_overlap = 0
+
+        # Scan backwards from right_idx
+        for i in range(right_idx - 1, -1, -1):
+            gstart, gend, gid = genes[i]
+            if gend <= aln['tstart']:
+                break  # no more overlap possible (sorted by start)
+            # Compute overlap
+            ovl_start = max(gstart, aln['tstart'])
+            ovl_end = min(gend, aln['tend'])
+            overlap = ovl_end - ovl_start
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_gene = gid
+
+        if best_gene:
+            gene_members[best_gene].append(qname)
+            tx_to_gene[qname] = best_gene
+        else:
+            gene_members['intergenic'].append(qname)
+            tx_to_gene[qname] = 'intergenic'
+
+    return gene_members, tx_to_gene
+
+
+# ── Coordinate-overlap fallback ─────────────────────────────────────
+
+def merge_loci(alignments, max_gap):
+    """Group overlapping/nearby alignments into ad-hoc loci (no GFF)."""
+    by_cs = defaultdict(list)
+    for qname, aln in alignments.items():
+        key = (aln['target'], aln['strand'])
+        by_cs[key].append((aln['tstart'], aln['tend'], qname))
+
+    gene_members = defaultdict(list)
+    tx_to_gene = {}
     locus_id = 0
 
-    for (chrom, strand), intervals in sorted(by_chrom_strand.items()):
-        intervals.sort()  # sort by start coordinate
-
-        # Merge overlapping/nearby intervals
+    for (chrom, strand), intervals in sorted(by_cs.items()):
+        intervals.sort()
         merged_start = intervals[0][0]
         merged_end = intervals[0][1]
-        current_members = [intervals[0][2]]
+        current = [intervals[0][2]]
 
         for start, end, qname in intervals[1:]:
             if start <= merged_end + max_gap:
-                # Overlaps or within gap tolerance — extend locus
                 merged_end = max(merged_end, end)
-                current_members.append(qname)
+                current.append(qname)
             else:
-                # New locus
                 locus_id += 1
-                loci.append({
-                    'locus_id': f'locus_{locus_id:06d}',
-                    'chrom': chrom,
-                    'strand': strand,
-                    'start': merged_start,
-                    'end': merged_end,
-                    'members': current_members,
-                })
+                lid = f'locus_{locus_id:06d}'
+                gene_members[lid] = current
+                for m in current:
+                    tx_to_gene[m] = lid
                 merged_start = start
                 merged_end = end
-                current_members = [qname]
+                current = [qname]
 
-        # Don't forget last locus in this chrom/strand
         locus_id += 1
-        loci.append({
-            'locus_id': f'locus_{locus_id:06d}',
-            'chrom': chrom,
-            'strand': strand,
-            'start': merged_start,
-            'end': merged_end,
-            'members': current_members,
-        })
+        lid = f'locus_{locus_id:06d}'
+        gene_members[lid] = current
+        for m in current:
+            tx_to_gene[m] = lid
 
-    return loci
+    return gene_members, tx_to_gene
 
 
-def pick_best_per_locus(loci, alignments):
-    """Pick best transcript per locus (most aligned bases, then longest query).
+# ── Best-per-group selection ────────────────────────────────────────
+
+def pick_best_per_group(gene_members, alignments):
+    """Pick best transcript per gene/locus: most aligned bases → longest.
 
     Returns:
-        selected: dict of {transcript_id: locus_id} for representatives
-        member_to_locus: dict of {transcript_id: locus_id} for all mapped
+        selected: dict of {transcript_id: group_id} for representatives
     """
     selected = {}
-    member_to_locus = {}
-
-    for locus in loci:
-        members = locus['members']
-        # Sort by: most matching bases, then longest query
+    for gid, members in gene_members.items():
         best = max(members, key=lambda q: (
             alignments[q]['matches'],
             alignments[q]['qlen'],
         ))
-        selected[best] = locus['locus_id']
-        for m in members:
-            member_to_locus[m] = locus['locus_id']
+        selected[best] = gid
+    return selected
 
-    return selected, member_to_locus
 
+# ── Main ────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Collapse transcripts by genomic locus (reference-guided)')
+        description='Collapse transcripts by genomic gene/locus')
     parser.add_argument('--paf', required=True,
                         help='minimap2 PAF alignment file')
     parser.add_argument('--fasta', required=True,
@@ -172,20 +226,21 @@ def main():
     parser.add_argument('--out', required=True,
                         help='Output collapsed FASTA')
     parser.add_argument('--map', required=True,
-                        help='Output locus map TSV')
+                        help='Output map TSV')
     parser.add_argument('--stats', required=True,
                         help='Output stats file')
+    parser.add_argument('--gff', default=None,
+                        help='Reference GFF3 with gene annotations. '
+                             'Enables gene-level collapse instead of '
+                             'coordinate-overlap merging.')
     parser.add_argument('--max-intron', type=int, default=200000,
-                        help='Max gap between alignments for locus merging (bp) '
+                        help='Max gap for coordinate-overlap merging (bp), '
+                             'only used when --gff is not provided '
                              '[default: 200000]')
     parser.add_argument('--min-coverage', type=float, default=0.5,
-                        help='Min query coverage to accept an alignment '
-                             '[default: 0.5]')
+                        help='Min query coverage [default: 0.5]')
     parser.add_argument('--min-mapq', type=int, default=5,
-                        help='Min mapping quality (0-255) to accept an '
-                             'alignment.  mapq=60 is unique; mapq>=5 '
-                             'allows multi-mappers with a clear best '
-                             '[default: 5]')
+                        help='Min mapping quality [default: 5]')
     args = parser.parse_args()
 
     # --- Parse PAF ---
@@ -202,27 +257,39 @@ def main():
     all_id_set = set(all_ids)
     mapped_ids = set(alignments.keys()) & all_id_set
     unmapped_ids = all_id_set - mapped_ids
+    filtered_alns = {k: v for k, v in alignments.items() if k in all_id_set}
 
     print(f"Total transcripts: {len(all_ids)}", file=sys.stderr)
     print(f"Mapped (accepted): {len(mapped_ids)}", file=sys.stderr)
     print(f"Unmapped/filtered: {len(unmapped_ids)}", file=sys.stderr)
 
-    # --- Merge into loci ---
-    # Only use alignments for transcripts in our FASTA
-    filtered_alns = {k: v for k, v in alignments.items() if k in all_id_set}
-    loci = merge_loci(filtered_alns, args.max_intron)
+    # --- Group transcripts by gene/locus ---
+    if args.gff:
+        genes_by_cs = parse_gff_genes(args.gff)
+        gene_members, tx_to_gene = assign_to_genes(filtered_alns, genes_by_cs)
+        mode = 'gene'
+    else:
+        gene_members, tx_to_gene = merge_loci(filtered_alns, args.max_intron)
+        mode = 'locus'
 
-    # --- Pick best per locus ---
-    selected, member_to_locus = pick_best_per_locus(loci, filtered_alns)
+    # --- Pick best per group ---
+    selected = pick_best_per_group(gene_members, filtered_alns)
 
-    # IDs to keep: best from each locus + all unmapped
+    # IDs to keep: best from each gene/locus + all unmapped
     keep_ids = set(selected.keys()) | unmapped_ids
 
-    print(f"Selected from loci: {len(selected)}", file=sys.stderr)
-    print(f"Unmapped retained:  {len(unmapped_ids)}", file=sys.stderr)
-    print(f"Total output:       {len(keep_ids)}", file=sys.stderr)
+    # Count intergenic (mapped but didn't overlap any gene)
+    n_intergenic = len(gene_members.get('intergenic', []))
+    n_gene_groups = len(gene_members) - (1 if 'intergenic' in gene_members else 0)
 
-    # --- Write output FASTA (preserve input order) ---
+    print(f"Groups ({mode}):       {n_gene_groups}", file=sys.stderr)
+    if mode == 'gene':
+        print(f"Intergenic:          {n_intergenic}", file=sys.stderr)
+    print(f"Selected:            {len(selected)}", file=sys.stderr)
+    print(f"Unmapped retained:   {len(unmapped_ids)}", file=sys.stderr)
+    print(f"Total output:        {len(keep_ids)}", file=sys.stderr)
+
+    # --- Write output FASTA ---
     n_written = 0
     with open(args.out, 'w') as out_fh:
         for rec in SeqIO.parse(args.fasta, 'fasta'):
@@ -230,14 +297,13 @@ def main():
                 SeqIO.write(rec, out_fh, 'fasta')
                 n_written += 1
 
-    # --- Write locus map ---
+    # --- Write map ---
     with open(args.map, 'w') as map_fh:
-        map_fh.write('transcript_id\tlocus_id\tstatus\n')
+        map_fh.write(f'transcript_id\t{mode}_id\tstatus\n')
         for tid in all_ids:
-            if tid in member_to_locus:
+            if tid in tx_to_gene:
                 status = 'selected' if tid in selected else 'collapsed'
-                locus = member_to_locus[tid]
-                map_fh.write(f'{tid}\t{locus}\t{status}\n')
+                map_fh.write(f'{tid}\t{tx_to_gene[tid]}\t{status}\n')
             else:
                 map_fh.write(f'{tid}\tunmapped\tretained\n')
 
@@ -245,34 +311,44 @@ def main():
     n_input = len(all_ids)
     n_mapped = len(mapped_ids)
     n_unmapped = len(unmapped_ids)
-    n_loci = len(loci)
-    n_multi = sum(1 for loc in loci if len(loc['members']) > 1)
     n_collapsed = n_input - n_written
-    biggest_locus = max((len(loc['members']) for loc in loci), default=0)
 
-    # Locus size distribution
-    sizes = [len(loc['members']) for loc in loci]
+    sizes = [len(v) for k, v in gene_members.items() if k != 'intergenic']
     size_1 = sum(1 for s in sizes if s == 1)
     size_2_5 = sum(1 for s in sizes if 2 <= s <= 5)
     size_6_20 = sum(1 for s in sizes if 6 <= s <= 20)
     size_21plus = sum(1 for s in sizes if s > 20)
+    biggest = max(sizes, default=0)
+
+    header = f"Gene-level collapse (GFF)" if mode == 'gene' else \
+             f"Locus clustering (coordinate overlap)"
 
     stats = (
-        f"Locus clustering (reference-guided)\n"
-        f"{'=' * 42}\n"
-        f"Input transcripts:     {n_input:>10,}\n"
-        f"Mapped to genome:      {n_mapped:>10,} ({n_mapped/n_input*100:.1f}%)\n"
-        f"Unmapped (retained):   {n_unmapped:>10,} ({n_unmapped/n_input*100:.1f}%)\n"
-        f"{'─' * 42}\n"
-        f"Genomic loci:          {n_loci:>10,}\n"
-        f"  Singleton loci:      {size_1:>10,}\n"
-        f"  2-5 transcripts:     {size_2_5:>10,}\n"
-        f"  6-20 transcripts:    {size_6_20:>10,}\n"
-        f"  >20 transcripts:     {size_21plus:>10,}\n"
-        f"Largest locus:         {biggest_locus:>10,} transcripts\n"
-        f"{'─' * 42}\n"
-        f"Output transcripts:    {n_written:>10,}\n"
-        f"Collapsed:             {n_collapsed:>10,} ({n_collapsed/n_input*100:.1f}%)\n"
+        f"{header}\n"
+        f"{'=' * 50}\n"
+        f"Input transcripts:       {n_input:>10,}\n"
+        f"Mapped to genome:        {n_mapped:>10,} "
+        f"({n_mapped/n_input*100:.1f}%)\n"
+        f"Unmapped (retained):     {n_unmapped:>10,} "
+        f"({n_unmapped/n_input*100:.1f}%)\n"
+    )
+    if mode == 'gene':
+        stats += (
+            f"Assigned to genes:       {n_mapped - n_intergenic:>10,}\n"
+            f"Intergenic (no gene):    {n_intergenic:>10,}\n"
+        )
+    stats += (
+        f"{'─' * 50}\n"
+        f"Reference genes hit:     {n_gene_groups:>10,}\n"
+        f"  1 transcript:          {size_1:>10,}\n"
+        f"  2-5 transcripts:       {size_2_5:>10,}\n"
+        f"  6-20 transcripts:      {size_6_20:>10,}\n"
+        f"  >20 transcripts:       {size_21plus:>10,}\n"
+        f"Largest gene group:      {biggest:>10,} transcripts\n"
+        f"{'─' * 50}\n"
+        f"Output transcripts:      {n_written:>10,}\n"
+        f"Collapsed:               {n_collapsed:>10,} "
+        f"({n_collapsed/n_input*100:.1f}%)\n"
     )
 
     with open(args.stats, 'w') as stats_fh:

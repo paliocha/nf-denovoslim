@@ -39,6 +39,7 @@ nextflow run $PIPELINE_DIR/main.nf \
     --diamond_db $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/uniref50.dmnd \
     --pfam_hmm $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/db/Pfam-A.hmm \
     --reference_genome $PROJECTS/FjellheimLab/EGAPx/Briza_maxima/complete.genomic.fna \
+    --reference_gff $PROJECTS/FjellheimLab/EGAPx/Briza_maxima/complete.genomic.gff \
     --td2_strategy aggressive \
     --busco_lineage poales_odb12 \
     --filter_taxon 33090 \

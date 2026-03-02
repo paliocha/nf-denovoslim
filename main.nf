@@ -154,14 +154,21 @@ workflow {
 
     MMSEQS2_CLUSTER(MMSEQS2_TAXONOMY.out.fasta, params.species_label)
 
-    // -- Optional: genome-guided locus clustering (--reference_genome) --
+    // -- Optional: genome-guided locus/gene-level clustering --
     // Map representatives to a reference genome with minimap2, then collapse
-    // transcripts that overlap on the same genomic locus.  Unmapped
-    // transcripts are retained.  Skipped when reference_genome is null.
+    // transcripts.  If --reference_gff is also provided, transcripts are
+    // assigned to annotated genes (gene-level collapse); otherwise they are
+    // grouped by coordinate overlap.  Unmapped transcripts are retained.
+    // Skipped entirely when --reference_genome is null.
 
     if (params.reference_genome) {
         MINIMAP2_SPLICE(MMSEQS2_CLUSTER.out.fasta, params.reference_genome, params.species_label)
-        LOCUS_CLUSTER(MMSEQS2_CLUSTER.out.fasta, MINIMAP2_SPLICE.out.paf, params.species_label)
+        LOCUS_CLUSTER(
+            MMSEQS2_CLUSTER.out.fasta,
+            MINIMAP2_SPLICE.out.paf,
+            params.reference_gff ?: '',
+            params.species_label
+        )
         ch_for_diamond = LOCUS_CLUSTER.out.fasta
     } else {
         ch_for_diamond = MMSEQS2_CLUSTER.out.fasta
