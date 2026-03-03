@@ -35,6 +35,7 @@ include { MERGE_PREDICTIONS                } from './modules/merge_predictions'
 include { HMMER_EXTEND                     } from './modules/hmmer_extend'
 include { MINIMAP2_SPLICE                   } from './modules/minimap2'
 include { LOCUS_CLUSTER                     } from './modules/locus_cluster'
+include { FILTER_UNMAPPED                   } from './modules/filter_unmapped'
 include { MMSEQS2_CLUSTER_PROTEIN           } from './modules/mmseqs2_cluster_protein'
 include { VALIDATE_IDS                     } from './modules/validate_ids'
 include { BUSCO as BUSCO_TRINITY           } from './modules/busco'
@@ -170,8 +171,10 @@ workflow {
             params.species_label
         )
         ch_for_diamond = LOCUS_CLUSTER.out.fasta
+        ch_locus_map   = LOCUS_CLUSTER.out.map
     } else {
         ch_for_diamond = MMSEQS2_CLUSTER.out.fasta
+        ch_locus_map   = Channel.empty()
     }
 
     // -- Decontaminated Trinity (all isoforms from clean clusters) --
@@ -273,9 +276,26 @@ workflow {
             params.pfam_hmm,
             params.species_label
         )
-        ch_proteins_for_dedup = HMMER_EXTEND.out.faa
+        ch_proteins_for_filter = HMMER_EXTEND.out.faa
     } else {
-        ch_proteins_for_dedup = MERGE_PREDICTIONS.out.faa
+        ch_proteins_for_filter = MERGE_PREDICTIONS.out.faa
+    }
+
+    // -- Filter unmapped transcripts lacking expression evidence --
+    // Only active when genome-guided locus clustering was used.
+    // Requires both a predicted ORF (already guaranteed — these are proteins)
+    // and expression (TPM >= threshold in >= N samples).
+
+    if (params.reference_genome) {
+        FILTER_UNMAPPED(
+            ch_proteins_for_filter,
+            ch_locus_map,
+            SALMON_QUANT_FINAL.out.quant_dir.collect(),
+            params.species_label
+        )
+        ch_proteins_for_dedup = FILTER_UNMAPPED.out.faa
+    } else {
+        ch_proteins_for_dedup = ch_proteins_for_filter
     }
 
     // -- Protein-level dedup (95% aa identity) --

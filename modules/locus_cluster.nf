@@ -30,6 +30,7 @@ process LOCUS_CLUSTER {
     def max_intron   = params.locus_max_intron   ?: 200000
     def min_coverage = params.locus_min_coverage ?: 0.5
     def min_mapq     = params.locus_min_mapq     ?: 5
+    def gene_flank   = params.locus_gene_flank   ?: 5000
     def gff_flag     = reference_gff ? "--gff ${reference_gff}" : ''
     """
     locus_cluster.py \\
@@ -41,6 +42,7 @@ process LOCUS_CLUSTER {
         --max-intron ${max_intron} \\
         --min-coverage ${min_coverage} \\
         --min-mapq ${min_mapq} \\
+        --gene-flank ${gene_flank} \\
         ${gff_flag}
     """
 }

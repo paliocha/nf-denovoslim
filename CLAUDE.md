@@ -56,11 +56,11 @@ Trinity.fasta + Reads
     │   MMSEQS2_TAXONOMY (plant filter)
     │       │
     │       ▼
-    │   MMSEQS2_CLUSTER (95% nt dedup)
+    │   MMSEQS2_CLUSTER (90% nt dedup)
     │       │
     │       ▼
     │   [MINIMAP2_SPLICE ──► LOCUS_CLUSTER] (optional, --reference_genome)
-    │       │
+    │       │  (both-strand gene lookup, 5kb flank, intergenic merge)
     │       ▼
     │   DIAMOND_BLASTX ──► CORRECT_FRAMESHIFTS
     │       │
@@ -77,6 +77,9 @@ Trinity.fasta + Reads
     │       │                       │
     │       │                       ▼
     │       │               HMMER_EXTEND (Pfam domain-guided, optional)
+    │       │                       │
+    │       │                       ▼
+    │       │               [FILTER_UNMAPPED] (optional, expression filter)
     │       │                       │
     │       │                       ▼
     │       │               MMSEQS2_CLUSTER_PROTEIN (95% aa dedup)

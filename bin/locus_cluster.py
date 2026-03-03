@@ -98,66 +98,86 @@ def parse_gff_genes(gff_file):
     return genes_by_cs
 
 
-def assign_to_genes(alignments, genes_by_cs):
+def _find_best_gene(aln, genes, flank):
+    """Find the best overlapping gene for an alignment, applying flank.
+
+    Returns (gene_id, overlap) or (None, 0) if no overlap.
+    """
+    if not genes:
+        return None, 0
+
+    starts = [g[0] for g in genes]
+    # Use flanked boundaries for overlap detection
+    # Rightmost gene whose (start - flank) < aln['tend']
+    right_idx = bisect.bisect_left(starts, aln['tend'] + flank)
+
+    best_gene = None
+    best_overlap = 0
+
+    for i in range(right_idx - 1, -1, -1):
+        gstart, gend, gid = genes[i]
+        # Apply flank to gene boundaries
+        fstart = max(0, gstart - flank)
+        fend = gend + flank
+        if fend <= aln['tstart']:
+            break  # no more overlap possible (sorted by start)
+        ovl_start = max(fstart, aln['tstart'])
+        ovl_end = min(fend, aln['tend'])
+        overlap = ovl_end - ovl_start
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_gene = gid
+
+    return best_gene, best_overlap
+
+
+def assign_to_genes(alignments, genes_by_cs, flank=0):
     """Assign each alignment to the best-overlapping reference gene.
 
     For each mapped transcript, find all genes on the same chrom/strand
-    that overlap the alignment interval, pick the gene with the largest
-    overlap.  Transcripts that don't overlap any gene go to 'intergenic'.
+    that overlap the alignment interval (extended by *flank* bp on each
+    side of every gene).  If no gene overlaps on the alignment strand,
+    the opposite strand is also checked.  Transcripts that don't overlap
+    any gene on either strand go to 'intergenic'.
 
     Returns:
         gene_members: dict of gene_id -> list of transcript IDs
         tx_to_gene:   dict of transcript_id -> gene_id
+        n_intergenic: number of intergenic transcripts
+        n_opposite:   number of transcripts rescued from opposite strand
     """
     gene_members = defaultdict(list)
     tx_to_gene = {}
     n_intergenic = 0
+    n_opposite = 0
 
     for qname, aln in alignments.items():
-        key = (aln['target'], aln['strand'])
-        genes = genes_by_cs.get(key, [])
-        if not genes:
-            # No genes on this chrom/strand — intergenic.
-            # Each intergenic transcript gets its own group so it's retained.
-            n_intergenic += 1
-            igid = f'intergenic_{n_intergenic:06d}'
-            gene_members[igid].append(qname)
-            tx_to_gene[qname] = igid
-            continue
+        chrom = aln['target']
+        strand = aln['strand']
+        opp_strand = '-' if strand == '+' else '+'
 
-        # Binary search: find genes whose start <= aln['tend']
-        # and end >= aln['tstart'] (overlap condition)
-        starts = [g[0] for g in genes]
-        # Rightmost gene that could overlap: start < tend
-        right_idx = bisect.bisect_left(starts, aln['tend'])
+        # Try same strand first
+        best_gene, best_overlap = _find_best_gene(
+            aln, genes_by_cs.get((chrom, strand), []), flank)
 
-        best_gene = None
-        best_overlap = 0
-
-        # Scan backwards from right_idx
-        for i in range(right_idx - 1, -1, -1):
-            gstart, gend, gid = genes[i]
-            if gend <= aln['tstart']:
-                break  # no more overlap possible (sorted by start)
-            # Compute overlap
-            ovl_start = max(gstart, aln['tstart'])
-            ovl_end = min(gend, aln['tend'])
-            overlap = ovl_end - ovl_start
-            if overlap > best_overlap:
-                best_overlap = overlap
-                best_gene = gid
+        # If nothing on same strand, try opposite strand
+        if not best_gene:
+            best_gene, best_overlap = _find_best_gene(
+                aln, genes_by_cs.get((chrom, opp_strand), []), flank)
+            if best_gene:
+                n_opposite += 1
 
         if best_gene:
             gene_members[best_gene].append(qname)
             tx_to_gene[qname] = best_gene
         else:
-            # Mapped to a chrom with genes but didn't overlap any — intergenic
+            # No gene on either strand — intergenic
             n_intergenic += 1
             igid = f'intergenic_{n_intergenic:06d}'
             gene_members[igid].append(qname)
             tx_to_gene[qname] = igid
 
-    return gene_members, tx_to_gene, n_intergenic
+    return gene_members, tx_to_gene, n_intergenic, n_opposite
 
 
 # ── Coordinate-overlap fallback ─────────────────────────────────────
@@ -240,9 +260,14 @@ def main():
                              'Enables gene-level collapse instead of '
                              'coordinate-overlap merging.')
     parser.add_argument('--max-intron', type=int, default=200000,
-                        help='Max gap for coordinate-overlap merging (bp), '
-                             'only used when --gff is not provided '
+                        help='Max gap for coordinate-overlap merging (bp). '
+                             'With --gff, used for intergenic merge; without '
+                             '--gff, used for all coordinate merging '
                              '[default: 200000]')
+    parser.add_argument('--gene-flank', type=int, default=5000,
+                        help='Extend gene boundaries by this many bp on each '
+                             'side when checking overlap (only with --gff) '
+                             '[default: 5000]')
     parser.add_argument('--min-coverage', type=float, default=0.5,
                         help='Min query coverage [default: 0.5]')
     parser.add_argument('--min-mapq', type=int, default=5,
@@ -272,12 +297,39 @@ def main():
     # --- Group transcripts by gene/locus ---
     if args.gff:
         genes_by_cs = parse_gff_genes(args.gff)
-        gene_members, tx_to_gene, n_intergenic = assign_to_genes(filtered_alns, genes_by_cs)
+        gene_members, tx_to_gene, n_intergenic, n_opposite = assign_to_genes(
+            filtered_alns, genes_by_cs, flank=args.gene_flank)
+
+        # Merge intergenic transcripts by coordinate overlap so that nearby
+        # unannotated transcripts collapse instead of each being retained.
+        if n_intergenic > 1:
+            intergenic_alns = {q: filtered_alns[q] for q, g in tx_to_gene.items()
+                               if g.startswith('intergenic_')}
+            if intergenic_alns:
+                ig_members, ig_tx_to_gene = merge_loci(intergenic_alns, args.max_intron)
+                # Remove old intergenic singletons
+                for gid in [k for k in gene_members if k.startswith('intergenic_')]:
+                    del gene_members[gid]
+                # Add merged intergenic loci
+                n_ig_singletons = 0
+                for lid, members in ig_members.items():
+                    new_lid = f'intergenic_{lid}'
+                    gene_members[new_lid] = members
+                    for m in members:
+                        tx_to_gene[m] = new_lid
+                    if len(members) == 1:
+                        n_ig_singletons += 1
+                n_ig_loci = len(ig_members)
+                print(f"Intergenic merge: {n_intergenic} transcripts → "
+                      f"{n_ig_loci} loci ({n_ig_singletons} singletons)",
+                      file=sys.stderr)
+                n_intergenic = n_ig_loci
         mode = 'gene'
     else:
         gene_members, tx_to_gene = merge_loci(filtered_alns, args.max_intron)
         mode = 'locus'
         n_intergenic = 0
+        n_opposite = 0
 
     # --- Pick best per group ---
     selected = pick_best_per_group(gene_members, filtered_alns)
@@ -290,7 +342,8 @@ def main():
 
     print(f"Groups ({mode}):       {n_gene_groups}", file=sys.stderr)
     if mode == 'gene':
-        print(f"Intergenic:          {n_intergenic}", file=sys.stderr)
+        print(f"Intergenic loci:     {n_intergenic}", file=sys.stderr)
+        print(f"Opposite-strand:     {n_opposite}", file=sys.stderr)
     print(f"Selected:            {len(selected)}", file=sys.stderr)
     print(f"Unmapped retained:   {len(unmapped_ids)}", file=sys.stderr)
     print(f"Total output:        {len(keep_ids)}", file=sys.stderr)
@@ -341,8 +394,11 @@ def main():
     )
     if mode == 'gene':
         stats += (
+            f"Gene boundary flank:     {args.gene_flank:>10,} bp\n"
             f"Assigned to genes:       {n_mapped - n_intergenic:>10,}\n"
-            f"Intergenic (no gene):    {n_intergenic:>10,}\n"
+            f"  Same strand:           {n_mapped - n_intergenic - n_opposite:>10,}\n"
+            f"  Opposite strand:       {n_opposite:>10,}\n"
+            f"Intergenic loci:         {n_intergenic:>10,}\n"
         )
     stats += (
         f"{'─' * 50}\n"

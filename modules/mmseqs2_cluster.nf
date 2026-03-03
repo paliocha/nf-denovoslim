@@ -1,5 +1,5 @@
 /*
- * MMSEQS2_CLUSTER — sequence-level dedup at 95% nucleotide identity
+ * MMSEQS2_CLUSTER — sequence-level dedup at 90% nucleotide identity
  * Catches near-identical transcripts that Corset missed (different read sets,
  * assembly duplicates).  Uses mmseqs easy-cluster on representative sequences.
  */
@@ -17,12 +17,12 @@ process MMSEQS2_CLUSTER {
 
     script:
     """
-    # Run MMseqs2 easy-cluster at 95% nucleotide identity
+    # Run MMseqs2 easy-cluster at 90% nucleotide identity
     mmseqs easy-cluster \\
         ${representatives_fasta} \\
         clust \\
         tmp_clust \\
-        --min-seq-id 0.95 \\
+        --min-seq-id 0.90 \\
         -c 0.8 \\
         --cov-mode 0 \\
         --threads ${task.cpus}
@@ -38,7 +38,7 @@ process MMSEQS2_CLUSTER {
     PCT=\$(awk "BEGIN{printf \\"%.1f\\", \$N_COLLAPSED/\$N_IN*100}")
 
     cat > cluster_stats.txt <<EOF
-    MMseqs2 nucleotide dedup (95% identity, 80% coverage)
+    MMseqs2 nucleotide dedup (90% identity, 80% coverage)
     Input sequences:     \$N_IN
     Output sequences:    \$N_OUT
     Collapsed:           \$N_COLLAPSED (\${PCT}%)
