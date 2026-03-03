@@ -111,15 +111,18 @@ def assign_to_genes(alignments, genes_by_cs):
     """
     gene_members = defaultdict(list)
     tx_to_gene = {}
+    n_intergenic = 0
 
     for qname, aln in alignments.items():
         key = (aln['target'], aln['strand'])
         genes = genes_by_cs.get(key, [])
         if not genes:
-            # Also try without strand (some GFF genes may be strandless,
-            # or transcript mapped to opposite strand of a gene)
-            gene_members['intergenic'].append(qname)
-            tx_to_gene[qname] = 'intergenic'
+            # No genes on this chrom/strand — intergenic.
+            # Each intergenic transcript gets its own group so it's retained.
+            n_intergenic += 1
+            igid = f'intergenic_{n_intergenic:06d}'
+            gene_members[igid].append(qname)
+            tx_to_gene[qname] = igid
             continue
 
         # Binary search: find genes whose start <= aln['tend']
@@ -148,10 +151,13 @@ def assign_to_genes(alignments, genes_by_cs):
             gene_members[best_gene].append(qname)
             tx_to_gene[qname] = best_gene
         else:
-            gene_members['intergenic'].append(qname)
-            tx_to_gene[qname] = 'intergenic'
+            # Mapped to a chrom with genes but didn't overlap any — intergenic
+            n_intergenic += 1
+            igid = f'intergenic_{n_intergenic:06d}'
+            gene_members[igid].append(qname)
+            tx_to_gene[qname] = igid
 
-    return gene_members, tx_to_gene
+    return gene_members, tx_to_gene, n_intergenic
 
 
 # ── Coordinate-overlap fallback ─────────────────────────────────────
@@ -266,11 +272,12 @@ def main():
     # --- Group transcripts by gene/locus ---
     if args.gff:
         genes_by_cs = parse_gff_genes(args.gff)
-        gene_members, tx_to_gene = assign_to_genes(filtered_alns, genes_by_cs)
+        gene_members, tx_to_gene, n_intergenic = assign_to_genes(filtered_alns, genes_by_cs)
         mode = 'gene'
     else:
         gene_members, tx_to_gene = merge_loci(filtered_alns, args.max_intron)
         mode = 'locus'
+        n_intergenic = 0
 
     # --- Pick best per group ---
     selected = pick_best_per_group(gene_members, filtered_alns)
@@ -278,9 +285,8 @@ def main():
     # IDs to keep: best from each gene/locus + all unmapped
     keep_ids = set(selected.keys()) | unmapped_ids
 
-    # Count intergenic (mapped but didn't overlap any gene)
-    n_intergenic = len(gene_members.get('intergenic', []))
-    n_gene_groups = len(gene_members) - (1 if 'intergenic' in gene_members else 0)
+    # Gene groups = total groups minus intergenic singletons
+    n_gene_groups = len(gene_members) - n_intergenic
 
     print(f"Groups ({mode}):       {n_gene_groups}", file=sys.stderr)
     if mode == 'gene':
@@ -313,7 +319,8 @@ def main():
     n_unmapped = len(unmapped_ids)
     n_collapsed = n_input - n_written
 
-    sizes = [len(v) for k, v in gene_members.items() if k != 'intergenic']
+    sizes = [len(v) for k, v in gene_members.items()
+             if not k.startswith('intergenic_')]
     size_1 = sum(1 for s in sizes if s == 1)
     size_2_5 = sum(1 for s in sizes if 2 <= s <= 5)
     size_6_20 = sum(1 for s in sizes if 6 <= s <= 20)
