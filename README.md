@@ -67,6 +67,25 @@ nextflow run main.nf --td2_strategy aggressive ...
 nextflow run main.nf --td2_abs_min_orf 60 --td2_length_scale 0.6 ...
 ```
 
+### Genome-guided locus clustering (optional)
+
+When a closely related reference genome is available, the pipeline can collapse transcripts that map to the same annotated gene — dramatically reducing the output set toward a realistic gene count. This step sits between MMseqs2 nucleotide dedup and frameshift correction, and is activated by providing `--reference_genome` (and optionally `--reference_gff`).
+
+**Two modes:**
+
+1. **Gene-level collapse** (`--reference_genome` + `--reference_gff`): Representatives are mapped to the genome with minimap2 (`-x splice`), then each transcript is assigned to the best-overlapping annotated gene. Transcripts are matched to genes on **both strands** (same strand checked first, then opposite) with **5 kb flanking** on gene boundaries (`--locus_gene_flank`). One representative per gene is kept (most aligned bases → longest). Intergenic transcripts (no gene overlap on either strand) are merged by coordinate overlap using `--locus_max_intron` (200 kb default) rather than each being retained individually.
+
+2. **Coordinate-overlap fallback** (`--reference_genome` only, no GFF): Transcripts mapping to overlapping genomic intervals are merged into ad-hoc loci using the same gap threshold.
+
+Unmapped transcripts (those that don't pass the mapq/coverage filters) are retained at this stage but can be filtered downstream.
+
+**Unmapped transcript expression filter** — When locus clustering is active, a post-merge filter (`FILTER_UNMAPPED`) removes proteins from unmapped transcripts that lack expression evidence. A protein is kept only if its source transcript has TPM ≥ `--unmapped_min_tpm` (default 1.0) in ≥ `--unmapped_min_samples` (default 2) Salmon samples. Proteins from gene-assigned and intergenic transcripts are always retained.
+
+**Species setup:**
+- BMED (Briza media) → Briza maxima genome + GFF (congener)
+- FPRA (Festuca pratensis) → Lolium perenne genome + GFF (Loliinae)
+- BMAX (Briza maxima) → no reference (self-reference would be circular)
+
 ### Dual BUSCO assessment
 
 The pipeline runs BUSCO twice to measure deduplication effectiveness:
@@ -78,7 +97,7 @@ Protein-mode BUSCO is the definitive quality metric because (a) it operates dire
 
 ## Pipeline
 
-28 processes across four parallel routes: **Assembly** follows the main representative selection → ORF prediction chain, **Quantification** forks after frameshift correction to re-quantify representatives with Salmon, **Annotation** branches from the merged protein set to TransAnnot + BUSCO QC. **BUSCO Trinity** runs independently on the raw assembly as a baseline.
+31 processes across four parallel routes: **Assembly** follows the main representative selection → ORF prediction chain, **Quantification** forks after frameshift correction to re-quantify representatives with Salmon, **Annotation** branches from the merged protein set to TransAnnot + BUSCO QC. **BUSCO Trinity** runs independently on the raw assembly as a baseline.
 
 | Step | Process | Tool |
 |------|---------|------|
@@ -87,14 +106,16 @@ Protein-mode BUSCO is the definitive quality metric because (a) it operates dire
 | 2 | Transcript-to-gene clustering | Corset 1.10 ([paliocha/Corset](https://github.com/paliocha/Corset)) |
 | 3 | Select longest transcript per cluster | Python/BioPython |
 | 4 | Taxonomy filter (keep Viridiplantae) | MMseqs2 taxonomy |
-| 4b | Nucleotide dedup (95% nt identity) | MMseqs2 cluster |
+| 4b | Nucleotide dedup (90% nt identity) | MMseqs2 cluster |
+| 4c | Genome-guided locus clustering (optional) | minimap2 2.28 + Python |
 | 5 | Frameshift correction | Diamond blastx 2.1.22 + BioPython |
 | 6a | ORF prediction (homology-supported) | TD2 + MMseqs2 (SwissProt, Pfam) |
 | 6b | ORF prediction (profile-based) | MetaEuk (vs SwissProt) |
 | 6c | ORF prediction (ab initio) | GeneMarkS-T |
 | 7 | PSAURON scoring (each predictor) | TD2 / PSAURON |
 | 8 | 3-way merge (completeness → length → PSAURON) | Python/BioPython |
-| 8b | Protein dedup (95% aa identity) | MMseqs2 cluster |
+| 8b | Filter unmapped proteins (optional, expression) | Python/BioPython |
+| 8c | Protein dedup (95% aa identity) | MMseqs2 cluster |
 | 9 | Gene-level quantification | Salmon 1.10.3 |
 | 10 | Protein completeness | BUSCO v6 (protein mode) |
 | 11 | Trinity completeness (parallel) | BUSCO v6 (transcriptome mode) |
@@ -178,6 +199,15 @@ Combine as needed: `-profile apptainer,orion` or `-profile apptainer,slurm,highm
 | `--sortmerna_db_dir` | `null` | Pre-downloaded rRNA DB dir |
 | `--unix_group` | `null` | Unix group for quota accounting |
 | `--orion_exclude_nodes` | `null` | SLURM nodes to exclude (e.g. `cn-37`) |
+| `--pfam_hmm` | `null` | Path to Pfam-A.hmm for HMMER protein extension |
+| `--reference_genome` | `null` | Reference genome FASTA (enables locus clustering) |
+| `--reference_gff` | `null` | Reference GFF3 (enables gene-level collapse) |
+| `--locus_max_intron` | `200000` | Max gap (bp) for coordinate-overlap / intergenic merge |
+| `--locus_min_coverage` | `0.5` | Min query coverage for alignment acceptance |
+| `--locus_min_mapq` | `5` | Min mapping quality (0–255) |
+| `--locus_gene_flank` | `5000` | Extend gene boundaries by this many bp |
+| `--unmapped_min_tpm` | `1.0` | Min TPM for unmapped transcript retention |
+| `--unmapped_min_samples` | `2` | Min samples exceeding TPM threshold |
 | `--outdir` | `./results` | Output directory |
 
 ## Pre-building databases
@@ -233,6 +263,10 @@ results/
 │   ├── representatives_filtered.fasta
 │   ├── taxonomy_filter_stats.txt
 │   └── taxonomy_breakdown.tsv
+├── locus_clustering/                      # Only with --reference_genome
+│   ├── locus_map.tsv                      # Transcript → gene/locus mapping
+│   ├── locus_stats.txt                    # Collapse statistics
+│   └── filter_unmapped_stats.txt          # Unmapped expression filter stats
 ├── frameshift_correction/
 │   └── frameshift_stats.txt
 ├── mmseqs2_search/

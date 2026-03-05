@@ -17,17 +17,27 @@ graph LR
         salmon_idx[Salmon Index]
         salmon_quant[Salmon Quant]
         corset[Corset]
-        lace[Lace]
+        select_rep[Select Rep]
         salmon_idx -->|main,quant| salmon_quant
         salmon_quant -->|main,quant| corset
-        corset -->|main,quant| lace
+        corset -->|main,quant| select_rep
     end
 
-    subgraph filtering [Taxonomy & Correction]
+    subgraph filtering [Taxonomy & Dedup]
         taxonomy[MMseqs2 Taxonomy]
+        nt_dedup[MMseqs2 Cluster 90%]
+        taxonomy -->|main| nt_dedup
+    end
+
+    subgraph locus [Genome-guided Collapse]
+        minimap2[minimap2 splice]
+        locus_cluster[Locus Cluster]
+        minimap2 -->|main| locus_cluster
+    end
+
+    subgraph correction [Frameshift Correction]
         diamond[Diamond BLASTX]
         frameshifts[Correct Frameshifts]
-        taxonomy -->|main| diamond
         diamond -->|main| frameshifts
     end
 
@@ -37,11 +47,23 @@ graph LR
         pfam[Pfam Search]
         td2_predict[TD2 Predict]
         select_best[Select Best ORF]
+        metaeuk[MetaEuk Predict]
+        gmst[GeneMarkS-T]
+        merge[Merge Predictions]
+        hmmer[HMMER Extend]
+        filter_unmapped[Filter Unmapped]
+        prot_dedup[MMseqs2 Cluster 95%]
         td2_long -->|main| swiss
         td2_long -->|main| pfam
         swiss -->|main| td2_predict
         pfam -->|main| td2_predict
-        td2_predict -->|main,annot| select_best
+        td2_predict -->|main| select_best
+        select_best -->|main| merge
+        metaeuk -->|main| merge
+        gmst -->|main| merge
+        merge -->|main| hmmer
+        hmmer -->|main| filter_unmapped
+        filter_unmapped -->|main| prot_dedup
     end
 
     subgraph gene_quant [Gene-level Quantification]
@@ -54,6 +76,8 @@ graph LR
 
     subgraph qc_annot [QC & Annotation]
         busco_trin[BUSCO Trinity]
+        busco_reps[BUSCO Reps]
+        busco_corr[BUSCO Corrected]
         busco_qc[BUSCO Proteins]
         transannot[TransAnnot]
     end
@@ -62,15 +86,29 @@ graph LR
         report[Thinning Report]
     end
 
-    %% Inter-section edges
+    %% Inter-section edges — Assembly route
     sortmerna -->|main| salmon_idx
-    sortmerna -->|quant| salmon_idx
-    lace -->|main| taxonomy
-    lace -->|quant| salmon_idx2
+    select_rep -->|main| taxonomy
+    nt_dedup -->|main| minimap2
+    locus_cluster -->|main| diamond
     frameshifts -->|main| td2_long
+    frameshifts -->|main| metaeuk
+    frameshifts -->|main| gmst
+    locus_cluster -.->|locus_map| filter_unmapped
+
+    %% Quantification route
+    sortmerna -->|quant| salmon_idx
+    frameshifts -->|quant| salmon_idx2
+    salmon_quant2 -.->|expression| filter_unmapped
+
+    %% QC & Annotation
     _input -->|main| busco_trin
-    select_best -->|main| busco_qc
-    select_best -->|annot| transannot
+    select_rep -->|main| busco_reps
+    frameshifts -->|main| busco_corr
+    prot_dedup -->|main| busco_qc
+    prot_dedup -->|annot| transannot
+
+    %% Reporting
     busco_trin -->|main| report
     busco_qc -->|main| report
     transannot -->|annot| report
