@@ -7,30 +7,24 @@
 graph LR
     subgraph preprocess [Pre-processing]
         _input
-        sortmerna_idx[SortMeRNA Index]
         sortmerna[SortMeRNA]
-        _input -->|main,quant| sortmerna_idx
-        sortmerna_idx -->|main,quant| sortmerna
+        _input -->|main,quant| sortmerna
     end
 
     subgraph clustering [Transcript Clustering]
-        salmon_idx_init[Salmon Index]
-        salmon_quant_init[Salmon Quant]
+        salmon_init[Salmon Quant]
         corset[Corset]
         select_rep[Select Rep]
-        salmon_idx_init -->|main,quant| salmon_quant_init
-        salmon_quant_init -->|main,quant| corset
+        salmon_init -->|main,quant| corset
         corset -->|main| select_rep
     end
 
     subgraph filtering [Filtering & Reduction]
-        taxonomy[MMseqs2 Taxonomy]
-        nt_dedup[MMseqs2 Cluster 90%]
-        minimap2[Minimap2 Splice]
+        taxonomy[Taxonomy Filter]
+        nt_cluster[NT Cluster 90%]
         locus_cluster[Locus Cluster]
-        taxonomy -->|main| nt_dedup
-        nt_dedup -->|main| minimap2
-        minimap2 -->|main| locus_cluster
+        taxonomy -->|main| nt_cluster
+        nt_cluster -->|main| locus_cluster
     end
 
     subgraph correction [Frameshift Correction]
@@ -40,90 +34,63 @@ graph LR
     end
 
     subgraph orf_pred [ORF Prediction]
-        td2_long[TD2 LongOrfs]
-        swiss[SwissProt Search]
-        pfam_search[Pfam Search]
+        td2[TD2 LongOrfs]
+        homology[Homology Search]
         td2_predict[TD2 Predict]
-        select_best[Select Best ORF]
-        metaeuk[MetaEuk Predict]
-        metaeuk_best[MetaEuk Select]
-        psauron_met[PSAURON MetaEuk]
+        best_orf[Select Best ORF]
+        metaeuk[MetaEuk]
         gmst[GeneMarkS-T]
-        psauron_gmst[PSAURON GMST]
-        td2_long -->|main,annot| swiss
-        td2_long -->|main,annot| pfam_search
-        swiss -->|annot| td2_predict
-        pfam_search -->|annot| td2_predict
-        td2_predict -->|main| select_best
-        metaeuk -->|main| metaeuk_best
-        metaeuk_best -->|main| psauron_met
-        gmst -->|main| psauron_gmst
+        td2 -->|main,annot| homology
+        homology -->|annot| td2_predict
+        td2_predict -->|main| best_orf
     end
 
     subgraph merge_section [Merge & Refinement]
         merge[Merge Predictions]
         hmmer[HMMER Extend]
-        filter_unmapped[Filter Unmapped]
-        prot_dedup[Protein Cluster 95%]
+        prot_cluster[Protein Cluster 95%]
         merge -->|main| hmmer
-        hmmer -->|main| filter_unmapped
-        filter_unmapped -->|main| prot_dedup
+        hmmer -->|main| prot_cluster
     end
 
     subgraph quantification [Quantification]
-        salmon_idx_gene[Salmon Index Gene]
-        salmon_quant_gene[Salmon Quant Gene]
+        salmon_gene[Gene-level Quant]
         validate[Validate IDs]
-        decontam[Decontaminate Trinity]
-        salmon_idx_full[Salmon Index Full]
-        salmon_quant_full[Salmon Quant Full]
+        decontam[Decontaminate]
+        salmon_full[Full Trinity Quant]
         tx2gene[Build tx2gene]
-        salmon_idx_gene -->|quant| salmon_quant_gene
-        salmon_quant_gene -->|quant| validate
-        decontam -->|quant| salmon_idx_full
-        salmon_idx_full -->|quant| salmon_quant_full
-        salmon_quant_full -->|quant| tx2gene
+        salmon_gene -->|quant| validate
+        decontam -->|quant| salmon_full
+        salmon_full -->|quant| tx2gene
     end
 
-    subgraph qc_annot [QC & Annotation]
-        busco_trin[BUSCO Trinity]
-        busco_reps[BUSCO Reps]
-        busco_corr[BUSCO Corrected]
+    subgraph output [QC & Output]
         busco_qc[BUSCO Proteins]
         transannot[TransAnnot]
-    end
-
-    subgraph reporting [Reporting]
         report[Thinning Report]
+        busco_qc -->|main| report
+        transannot -->|annot| report
     end
 
     %% Assembly route
-    sortmerna -->|main| salmon_idx_init
+    sortmerna -->|main| salmon_init
     select_rep -->|main| taxonomy
     locus_cluster -->|main| diamond
-    frameshifts -->|main| td2_long
+    frameshifts -->|main| td2
     frameshifts -->|main| metaeuk
     frameshifts -->|main| gmst
-    select_best -->|main| merge
-    psauron_met -->|main| merge
-    psauron_gmst -->|main| merge
+    best_orf -->|main| merge
+    metaeuk -->|main| merge
+    gmst -->|main| merge
+    prot_cluster -->|main| busco_qc
 
     %% Quantification route
-    sortmerna -->|quant| salmon_idx_init
-    frameshifts -->|quant| salmon_idx_gene
+    sortmerna -->|quant| salmon_init
+    frameshifts -->|quant| salmon_gene
     corset -->|quant| decontam
-    prot_dedup -->|quant| tx2gene
-
-    %% QC & Annotation
-    _input -->|main| busco_trin
-    select_rep -->|main| busco_reps
-    frameshifts -->|main| busco_corr
-    prot_dedup -->|main| busco_qc
-    prot_dedup -->|annot| transannot
-
-    %% Reporting
-    busco_trin -->|main| report
-    busco_qc -->|main| report
-    transannot -->|annot| report
+    prot_cluster -->|quant| tx2gene
     validate -->|quant| report
     tx2gene -->|quant| report
+
+    %% Annotation route
+    prot_cluster -->|annot| transannot
