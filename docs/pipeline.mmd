@@ -14,12 +14,12 @@ graph LR
     end
 
     subgraph clustering [Transcript Clustering]
-        salmon_idx[Salmon Index]
-        salmon_quant[Salmon Quant]
+        salmon_idx_init[Salmon Index]
+        salmon_quant_init[Salmon Quant]
         corset[Corset]
         select_rep[Select Rep]
-        salmon_idx -->|main,quant| salmon_quant
-        salmon_quant -->|main,quant| corset
+        salmon_idx_init -->|main,quant| salmon_quant_init
+        salmon_quant_init -->|main,quant| corset
         corset -->|main,quant| select_rep
     end
 
@@ -30,7 +30,7 @@ graph LR
     end
 
     subgraph locus [Genome-guided Collapse]
-        minimap2[minimap2 splice]
+        minimap2[Minimap2 Splice]
         locus_cluster[Locus Cluster]
         minimap2 -->|main| locus_cluster
     end
@@ -41,37 +41,59 @@ graph LR
         diamond -->|main| frameshifts
     end
 
-    subgraph orf_pred [ORF Prediction]
+    subgraph orf_pred [ORF Prediction — TD2 Branch]
         td2_long[TD2 LongOrfs]
         swiss[SwissProt Search]
-        pfam[Pfam Search]
+        pfam_search[Pfam Search]
         td2_predict[TD2 Predict]
         select_best[Select Best ORF]
+        td2_long -->|main,annot| swiss
+        td2_long -->|main,annot| pfam_search
+        swiss -->|annot| td2_predict
+        pfam_search -->|annot| td2_predict
+        td2_predict -->|main| select_best
+    end
+
+    subgraph metaeuk_pred [ORF Prediction — MetaEuk Branch]
         metaeuk[MetaEuk Predict]
+        metaeuk_best[MetaEuk Select Best]
+        psauron_met[PSAURON MetaEuk]
+        metaeuk -->|main| metaeuk_best
+        metaeuk_best -->|main| psauron_met
+    end
+
+    subgraph gmst_pred [ORF Prediction — GeneMarkS-T Branch]
         gmst[GeneMarkS-T]
+        psauron_gmst[PSAURON GMST]
+        gmst -->|main| psauron_gmst
+    end
+
+    subgraph merge_section [Merge & Post-processing]
         merge[Merge Predictions]
         hmmer[HMMER Extend]
         filter_unmapped[Filter Unmapped]
         prot_dedup[MMseqs2 Cluster 95%]
-        td2_long -->|main| swiss
-        td2_long -->|main| pfam
-        swiss -->|main| td2_predict
-        pfam -->|main| td2_predict
-        td2_predict -->|main| select_best
-        select_best -->|main| merge
-        metaeuk -->|main| merge
-        gmst -->|main| merge
         merge -->|main| hmmer
         hmmer -->|main| filter_unmapped
         filter_unmapped -->|main| prot_dedup
     end
 
     subgraph gene_quant [Gene-level Quantification]
-        salmon_idx2[Salmon Index]
-        salmon_quant2[Salmon Quant]
+        salmon_idx_final[Salmon Index]
+        salmon_quant_final[Salmon Quant]
         validate[Validate IDs]
-        salmon_idx2 -->|quant| salmon_quant2
-        salmon_quant2 -->|quant| validate
+        salmon_idx_final -->|quant| salmon_quant_final
+        salmon_quant_final -->|quant| validate
+    end
+
+    subgraph full_quant [Full Trinity Quantification]
+        decontam[Decontaminate Trinity]
+        salmon_idx_full[Salmon Index]
+        salmon_quant_full[Salmon Quant]
+        tx2gene[Build tx2gene]
+        decontam -->|quant| salmon_idx_full
+        salmon_idx_full -->|quant| salmon_quant_full
+        salmon_quant_full -->|quant| tx2gene
     end
 
     subgraph qc_annot [QC & Annotation]
@@ -87,19 +109,30 @@ graph LR
     end
 
     %% Inter-section edges — Assembly route
-    sortmerna -->|main| salmon_idx
+    sortmerna -->|main| salmon_idx_init
     select_rep -->|main| taxonomy
     nt_dedup -->|main| minimap2
     locus_cluster -->|main| diamond
     frameshifts -->|main| td2_long
     frameshifts -->|main| metaeuk
     frameshifts -->|main| gmst
+    select_best -->|main| merge
+    psauron_met -->|main| merge
+    psauron_gmst -->|main| merge
     locus_cluster -.->|locus_map| filter_unmapped
 
     %% Quantification route
-    sortmerna -->|quant| salmon_idx
-    frameshifts -->|quant| salmon_idx2
-    salmon_quant2 -.->|expression| filter_unmapped
+    sortmerna -->|quant| salmon_idx_init
+    frameshifts -->|quant| salmon_idx_final
+    salmon_quant_final -.->|expression| merge
+    salmon_quant_final -.->|expression| filter_unmapped
+
+    %% Full Trinity quantification route
+    corset -->|quant| decontam
+    taxonomy -->|quant| decontam
+    corset -->|quant| tx2gene
+    nt_dedup -->|quant| tx2gene
+    prot_dedup -->|quant| tx2gene
 
     %% QC & Annotation
     _input -->|main| busco_trin
@@ -113,3 +146,4 @@ graph LR
     busco_qc -->|main| report
     transannot -->|annot| report
     validate -->|quant| report
+    tx2gene -->|quant| report
