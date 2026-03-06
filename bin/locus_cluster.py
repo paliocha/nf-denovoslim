@@ -25,8 +25,16 @@ from Bio import SeqIO
 # ── PAF parsing ──────────────────────────────────────────────────────
 
 def parse_paf(paf_file, min_coverage, min_mapq):
-    """Parse PAF, keep best hit per query.  Filter on coverage + mapq."""
-    alignments = {}
+    """Parse PAF, keep all passing alignments per query, sorted by quality.
+
+    With --secondary=yes in minimap2, a transcript can have multiple
+    alignments.  All passing alignments are kept, sorted by
+    (matches, qlen) descending so the best alignment is first.
+
+    Returns:
+        dict of query -> list of alignment dicts (best first)
+    """
+    all_alns = defaultdict(list)
     with open(paf_file) as fh:
         for line in fh:
             f = line.rstrip('\n').split('\t')
@@ -47,12 +55,15 @@ def parse_paf(paf_file, min_coverage, min_mapq):
             if coverage < min_coverage or mapq < min_mapq:
                 continue
 
-            if query not in alignments or matches > alignments[query]['matches']:
-                alignments[query] = dict(
-                    target=target, strand=strand, tstart=tstart, tend=tend,
-                    qlen=qlen, coverage=coverage, mapq=mapq, matches=matches,
-                )
-    return alignments
+            all_alns[query].append(dict(
+                target=target, strand=strand, tstart=tstart, tend=tend,
+                qlen=qlen, coverage=coverage, mapq=mapq, matches=matches,
+            ))
+
+    # Sort each query's alignments by quality (best first)
+    for q in all_alns:
+        all_alns[q].sort(key=lambda a: (a['matches'], a['qlen']), reverse=True)
+    return dict(all_alns)
 
 
 # ── GFF gene parsing ────────────────────────────────────────────────
@@ -240,6 +251,89 @@ def pick_best_per_group(gene_members, alignments):
     return selected
 
 
+# ── Greedy multi-alignment assignment ────────────────────────────────
+
+def build_gene_candidates(multi_alns, genes_by_cs, flank):
+    """For each (transcript, alignment), find the overlapping reference gene.
+
+    Returns:
+        candidates: list of (matches, qlen, query_name, gene_id) tuples
+        tx_any_gene: set of transcript IDs that overlap at least one gene
+        n_opposite: number of candidates matched via opposite strand
+    """
+    candidates = []
+    tx_any_gene = set()
+    n_opposite = 0
+
+    for qname, alns in multi_alns.items():
+        for aln in alns:
+            chrom = aln['target']
+            strand = aln['strand']
+            opp_strand = '-' if strand == '+' else '+'
+
+            gene, _ = _find_best_gene(
+                aln, genes_by_cs.get((chrom, strand), []), flank)
+            opp = False
+            if not gene:
+                gene, _ = _find_best_gene(
+                    aln, genes_by_cs.get((chrom, opp_strand), []), flank)
+                if gene:
+                    opp = True
+
+            if gene:
+                candidates.append((aln['matches'], aln['qlen'], qname, gene))
+                tx_any_gene.add(qname)
+                if opp:
+                    n_opposite += 1
+
+    return candidates, tx_any_gene, n_opposite
+
+
+def greedy_assign(candidates):
+    """Greedy one-to-one assignment: sort by alignment quality, assign first.
+
+    Each reference gene gets exactly one transcript (the best available),
+    and each transcript fills at most one gene.  Transcripts whose primary
+    gene is already filled can be *rescued* by a secondary alignment to an
+    unfilled gene.
+
+    Returns:
+        selected:   dict {transcript_id: gene_id} for winners
+        gene_pool:  dict {gene_id: [candidate_tx_ids]} (all candidates, for stats)
+        n_rescued:  count of transcripts assigned via a non-primary alignment
+        tx_primary: dict {transcript_id: gene_id} mapping each tx to its
+                    best (primary) gene — used for map output
+    """
+    # Sort by quality: best alignment first
+    candidates.sort(reverse=True)
+
+    # Track all candidates per gene (for stats) and each tx's primary gene
+    gene_pool = defaultdict(list)
+    tx_primary = {}
+
+    for matches, qlen, qname, gene in candidates:
+        gene_pool[gene].append(qname)
+        if qname not in tx_primary:
+            tx_primary[qname] = gene  # first (=best) after sort
+
+    # Greedy assignment
+    selected = {}
+    used_tx = set()
+    filled_gene = set()
+    n_rescued = 0
+
+    for matches, qlen, qname, gene in candidates:
+        if qname in used_tx or gene in filled_gene:
+            continue
+        selected[qname] = gene
+        used_tx.add(qname)
+        filled_gene.add(gene)
+        if tx_primary[qname] != gene:
+            n_rescued += 1
+
+    return selected, dict(gene_pool), n_rescued, tx_primary
+
+
 # ── Main ────────────────────────────────────────────────────────────
 
 def main():
@@ -276,7 +370,8 @@ def main():
 
     # --- Parse PAF ---
     alignments = parse_paf(args.paf, args.min_coverage, args.min_mapq)
-    print(f"Accepted alignments: {len(alignments)}", file=sys.stderr)
+    n_aln = sum(len(v) for v in alignments.values())
+    print(f"Accepted alignments: {n_aln} ({len(alignments)} queries)", file=sys.stderr)
 
     # --- Read all transcript IDs ---
     all_ids = []
@@ -295,55 +390,63 @@ def main():
     print(f"Unmapped/filtered: {len(unmapped_ids)}", file=sys.stderr)
 
     # --- Group transcripts by gene/locus ---
+    n_rescued = 0
     if args.gff:
         genes_by_cs = parse_gff_genes(args.gff)
-        gene_members, tx_to_gene, n_intergenic, n_opposite = assign_to_genes(
+
+        # Build gene candidates from ALL alignments (primary + secondary)
+        candidates, tx_any_gene, n_opposite = build_gene_candidates(
             filtered_alns, genes_by_cs, flank=args.gene_flank)
 
-        # Merge intergenic transcripts by coordinate overlap so that nearby
-        # unannotated transcripts collapse instead of each being retained.
-        if n_intergenic > 1:
-            intergenic_alns = {q: filtered_alns[q] for q, g in tx_to_gene.items()
-                               if g.startswith('intergenic_')}
-            if intergenic_alns:
-                ig_members, ig_tx_to_gene = merge_loci(intergenic_alns, args.max_intron)
-                # Remove old intergenic singletons
-                for gid in [k for k in gene_members if k.startswith('intergenic_')]:
-                    del gene_members[gid]
-                # Add merged intergenic loci
-                n_ig_singletons = 0
-                for lid, members in ig_members.items():
-                    new_lid = f'intergenic_{lid}'
-                    gene_members[new_lid] = members
-                    for m in members:
-                        tx_to_gene[m] = new_lid
-                    if len(members) == 1:
-                        n_ig_singletons += 1
-                n_ig_loci = len(ig_members)
-                print(f"Intergenic merge: {n_intergenic} transcripts → "
-                      f"{n_ig_loci} loci ({n_ig_singletons} singletons)",
-                      file=sys.stderr)
-                n_intergenic = n_ig_loci
+        # Greedy one-to-one assignment: maximize gene coverage
+        selected, gene_pool, n_rescued, tx_primary = greedy_assign(candidates)
+        n_gene_groups = len(gene_pool)
+
+        # Intergenic: mapped transcripts with no gene overlap on any alignment
+        intergenic_ids = mapped_ids - tx_any_gene
+        intergenic_mapped = {q: filtered_alns[q][0] for q in intergenic_ids}
+
+        n_intergenic = 0
+        ig_tx_to_gene = {}
+        if intergenic_mapped:
+            ig_members, ig_tx_to_gene = merge_loci(
+                intergenic_mapped, args.max_intron)
+            ig_selected = pick_best_per_group(ig_members, intergenic_mapped)
+            selected.update(ig_selected)
+            n_intergenic = len(ig_members)
+            n_ig_singletons = sum(1 for v in ig_members.values() if len(v) == 1)
+            print(f"Intergenic merge: {len(intergenic_ids)} transcripts → "
+                  f"{n_intergenic} loci ({n_ig_singletons} singletons)",
+                  file=sys.stderr)
+
+        # Build full tx_to_gene for map output
+        tx_to_gene = {}
+        for tx, gene in tx_primary.items():
+            tx_to_gene[tx] = gene  # primary gene for all gene-overlapping txs
+        for tx, gene in selected.items():
+            tx_to_gene[tx] = gene  # override with actual assigned gene
+        for tx, locus in ig_tx_to_gene.items():
+            tx_to_gene[tx] = locus  # intergenic txs
+
         mode = 'gene'
     else:
-        gene_members, tx_to_gene = merge_loci(filtered_alns, args.max_intron)
+        primary_alns = {q: alns[0] for q, alns in filtered_alns.items()}
+        gene_members, tx_to_gene = merge_loci(primary_alns, args.max_intron)
+        selected = pick_best_per_group(gene_members, primary_alns)
+        gene_pool = gene_members  # for stats compatibility
         mode = 'locus'
         n_intergenic = 0
         n_opposite = 0
-
-    # --- Pick best per group ---
-    selected = pick_best_per_group(gene_members, filtered_alns)
+        n_gene_groups = len(gene_pool)
 
     # IDs to keep: best from each gene/locus + all unmapped
     keep_ids = set(selected.keys()) | unmapped_ids
 
-    # Gene groups = total groups minus intergenic singletons
-    n_gene_groups = len(gene_members) - n_intergenic
-
     print(f"Groups ({mode}):       {n_gene_groups}", file=sys.stderr)
     if mode == 'gene':
+        print(f"Gene candidates:     {len(tx_any_gene)}", file=sys.stderr)
         print(f"Intergenic loci:     {n_intergenic}", file=sys.stderr)
-        print(f"Opposite-strand:     {n_opposite}", file=sys.stderr)
+        print(f"Rescued (secondary): {n_rescued}", file=sys.stderr)
     print(f"Selected:            {len(selected)}", file=sys.stderr)
     print(f"Unmapped retained:   {len(unmapped_ids)}", file=sys.stderr)
     print(f"Total output:        {len(keep_ids)}", file=sys.stderr)
@@ -372,15 +475,14 @@ def main():
     n_unmapped = len(unmapped_ids)
     n_collapsed = n_input - n_written
 
-    sizes = [len(v) for k, v in gene_members.items()
-             if not k.startswith('intergenic_')]
+    sizes = [len(set(v)) for v in gene_pool.values()]
     size_1 = sum(1 for s in sizes if s == 1)
     size_2_5 = sum(1 for s in sizes if 2 <= s <= 5)
     size_6_20 = sum(1 for s in sizes if 6 <= s <= 20)
     size_21plus = sum(1 for s in sizes if s > 20)
     biggest = max(sizes, default=0)
 
-    header = f"Gene-level collapse (GFF)" if mode == 'gene' else \
+    header = f"Gene-level collapse (GFF, greedy)" if mode == 'gene' else \
              f"Locus clustering (coordinate overlap)"
 
     stats = (
@@ -395,19 +497,23 @@ def main():
     if mode == 'gene':
         stats += (
             f"Gene boundary flank:     {args.gene_flank:>10,} bp\n"
-            f"Assigned to genes:       {n_mapped - n_intergenic:>10,}\n"
-            f"  Same strand:           {n_mapped - n_intergenic - n_opposite:>10,}\n"
-            f"  Opposite strand:       {n_opposite:>10,}\n"
+            f"Overlapping ref genes:   {len(tx_any_gene):>10,}\n"
+            f"  Opposite-strand hits:  {n_opposite:>10,}\n"
+            f"Intergenic (no gene):    {len(intergenic_ids):>10,}\n"
             f"Intergenic loci:         {n_intergenic:>10,}\n"
         )
     stats += (
         f"{'─' * 50}\n"
         f"Reference genes hit:     {n_gene_groups:>10,}\n"
-        f"  1 transcript:          {size_1:>10,}\n"
-        f"  2-5 transcripts:       {size_2_5:>10,}\n"
-        f"  6-20 transcripts:      {size_6_20:>10,}\n"
-        f"  >20 transcripts:       {size_21plus:>10,}\n"
-        f"Largest gene group:      {biggest:>10,} transcripts\n"
+        f"  1 candidate:           {size_1:>10,}\n"
+        f"  2-5 candidates:        {size_2_5:>10,}\n"
+        f"  6-20 candidates:       {size_6_20:>10,}\n"
+        f"  >20 candidates:        {size_21plus:>10,}\n"
+        f"Largest gene pool:       {biggest:>10,} candidates\n"
+    )
+    if n_rescued > 0:
+        stats += f"Rescued via secondary:   {n_rescued:>10,}\n"
+    stats += (
         f"{'─' * 50}\n"
         f"Output transcripts:      {n_written:>10,}\n"
         f"Collapsed:               {n_collapsed:>10,} "

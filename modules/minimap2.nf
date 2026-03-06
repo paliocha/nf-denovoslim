@@ -25,7 +25,7 @@ process MINIMAP2_SPLICE {
     """
     minimap2 \\
         -x splice \\
-        --secondary=no \\
+        --secondary=yes \\
         -t ${task.cpus} \\
         "${reference_genome}" \\
         ${query_fasta} \\
