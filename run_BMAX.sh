@@ -42,6 +42,5 @@ nextflow run $PIPELINE_DIR/main.nf \
     --busco_lineage poales_odb12 \
     --filter_taxon 33090 \
     --unix_group fjellheimlab \
-    --orion_exclude_nodes cn-37 \
     --outdir $PROJECTS/FjellheimLab/martpali/AnnualPerennial/nf-denovoslim/BMAX
 "
