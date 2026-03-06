@@ -148,6 +148,10 @@ def main():
                         help='Comma-separated initial quant dirs')
     parser.add_argument('--final-quants', required=True,
                         help='Comma-separated final quant dirs')
+    parser.add_argument('--full-quants', default='',
+                        help='Comma-separated full Trinity quant dirs')
+    parser.add_argument('--tx2gene', default='',
+                        help='tx2gene.tsv mapping file')
     parser.add_argument('--busco-trinity', required=True,
                         help='BUSCO Trinity summary file')
     parser.add_argument('--busco-reps', default='',
@@ -180,6 +184,8 @@ def main():
     faa_file      = args.faa
     initial_qdir  = args.initial_quants
     final_qdir    = args.final_quants
+    full_qdir     = args.full_quants
+    tx2gene_file  = args.tx2gene
     busco_trinity = args.busco_trinity
     busco_reps    = args.busco_reps
     busco_corrected = args.busco_corrected
@@ -369,6 +375,65 @@ def main():
 
     n_zero_init  = sum(1 for t in init_mean_tpms if t == 0)
     n_zero_final = sum(1 for t in final_mean_tpms if t == 0)
+
+    # -- Expression stats (full = all Trinity isoforms via tx2gene) --
+
+    full_tpm = {}
+    full_reads = {}
+    n_samples_full = 0
+    full_mean_tpms = []
+    full_gene_tpms = defaultdict(list)  # gene_id -> [mean_tpm_per_isoform]
+    tx2gene = {}  # transcript_id -> gene_id
+
+    if full_qdir:
+        full_dirs = [d for d in full_qdir.split(",") if d.strip()]
+        full_tpm, full_reads, n_samples_full = aggregate_quants(full_dirs)
+        full_mean_tpms = [statistics.mean(v) for v in full_tpm.values() if v]
+
+    if tx2gene_file and os.path.isfile(tx2gene_file):
+        with open(tx2gene_file) as f:
+            header = f.readline()
+            for line in f:
+                parts = line.strip().split("\t")
+                if len(parts) >= 2:
+                    tx2gene[parts[0]] = parts[1]
+
+        # Aggregate transcript TPMs to gene level using tx2gene
+        if full_tpm and tx2gene:
+            gene_sample_tpms = defaultdict(lambda: [0.0] * n_samples_full)
+            for tx_id, tpm_list in full_tpm.items():
+                gene = tx2gene.get(tx_id, tx_id)
+                for i, tpm in enumerate(tpm_list):
+                    gene_sample_tpms[gene][i] += tpm
+            for gene, sample_tpms in gene_sample_tpms.items():
+                full_gene_tpms[gene] = sample_tpms
+
+    # -- Post-dedup protein completeness (diagnostic for representative swap) --
+
+    final_protein_ids = set()
+    with open(faa_file) as f:
+        for line in f:
+            if line.startswith('>'):
+                final_protein_ids.add(line[1:].split()[0])
+
+    # Cross-reference merge map completeness with surviving proteins
+    postdedup_completeness = defaultdict(int)
+    postdedup_partial_genes = []
+    if os.path.isfile(merge_map):
+        with open(merge_map) as f:
+            header_line = f.readline().strip()
+            cols = header_line.split("\t")
+            ci = {name: i for i, name in enumerate(cols)}
+            if "completeness" in ci:
+                for line in f:
+                    parts = line.strip().split("\t")
+                    if len(parts) > ci["completeness"]:
+                        gene_id = parts[0]
+                        compl = parts[ci["completeness"]]
+                        if gene_id in final_protein_ids:
+                            postdedup_completeness[compl] += 1
+                            if compl not in ("complete",):
+                                postdedup_partial_genes.append(gene_id)
 
     # -- BUSCO summaries --
 
@@ -571,6 +636,28 @@ def main():
                 r.write(f"    {line}\n")
             r.write("\n")
 
+        # Post-dedup protein completeness diagnostic
+        if postdedup_completeness:
+            total_final = sum(postdedup_completeness.values())
+            n_complete = postdedup_completeness.get('complete', 0)
+            n_partial = total_final - n_complete
+            pct_partial = n_partial / total_final * 100 if total_final > 0 else 0.0
+            r.write("  Final protein completeness (post-dedup):\n")
+            for compl_type in sorted(postdedup_completeness,
+                                      key=postdedup_completeness.get, reverse=True):
+                cnt = postdedup_completeness[compl_type]
+                pct = cnt / total_final * 100 if total_final > 0 else 0.0
+                r.write(f"    {compl_type:<25} {cnt:>10,}  ({pct:.1f}%)\n")
+            r.write(f"\n  ** {n_partial:,} of {total_final:,} final proteins "
+                    f"are partial ({pct_partial:.1f}%)")
+            if pct_partial < 5:
+                r.write(" — low: representative swap unlikely needed **\n")
+            elif pct_partial < 15:
+                r.write(" — moderate: consider representative swap **\n")
+            else:
+                r.write(" — high: representative swap recommended **\n")
+            r.write("\n")
+
         # --- Section 6: Corset cluster sizes ---
         r.write("6. CORSET CLUSTER SIZES\n")
         r.write("-" * 40 + "\n")
@@ -610,6 +697,48 @@ def main():
         else:
             r.write("  (expression data not available)\n")
         r.write("\n")
+
+        # --- Section 7b: Full Trinity quant + tx2gene comparison ---
+        if full_mean_tpms and full_gene_tpms:
+            r.write("  --- Full Trinity quantification (tximport-compatible) ---\n")
+            r.write(f"  Salmon index:           decontaminated Trinity ({len(full_mean_tpms):,} transcripts)\n")
+            r.write(f"  Samples quantified:     {n_samples_full}\n")
+            r.write(f"  tx2gene genes:          {len(set(tx2gene.values())):,}\n")
+
+            # Gene-level summary from tx2gene aggregation
+            gene_means = [statistics.mean(tpms) for tpms in full_gene_tpms.values() if tpms]
+            n_zero_genes = sum(1 for m in gene_means if m == 0)
+            if gene_means:
+                r.write(f"  Gene-level features:    {len(gene_means):,}\n")
+                r.write(f"  Mean gene TPM:          {statistics.mean(gene_means):.2f}\n")
+                r.write(f"  Median gene TPM:        {statistics.median(gene_means):.2f}\n")
+                nz_gene = [t for t in gene_means if t > 0]
+                if nz_gene:
+                    r.write(f"  Median gene TPM (>0):   {statistics.median(nz_gene):.2f}\n")
+                r.write(f"  Zero-expression genes:  {n_zero_genes:,}\n")
+            r.write("\n")
+
+            # Compare representative-only vs full Trinity gene-level counts
+            if final_mean_tpms:
+                r.write("  Quantification comparison (representative-only vs full Trinity):\n")
+                r.write(f"    {'Metric':<35} {'Rep-only':>12} {'Full+tx2gene':>12}\n")
+                r.write(f"    {'-' * 35} {'-' * 12} {'-' * 12}\n")
+                r.write(f"    {'Gene-level features':<35} {len(final_mean_tpms):>12,} "
+                        f"{len(gene_means):>12,}\n")
+                r.write(f"    {'Mean gene TPM':<35} "
+                        f"{statistics.mean(final_mean_tpms):>12.2f} "
+                        f"{statistics.mean(gene_means):>12.2f}\n")
+                r.write(f"    {'Median gene TPM':<35} "
+                        f"{statistics.median(final_mean_tpms):>12.2f} "
+                        f"{statistics.median(gene_means):>12.2f}\n")
+                r.write(f"    {'Zero-expression genes':<35} "
+                        f"{n_zero_final:>12,} {n_zero_genes:>12,}\n")
+                r.write("\n")
+
+        elif tx2gene:
+            r.write("  --- tx2gene mapping loaded ({:,} transcripts → {:,} genes) ---\n".format(
+                len(tx2gene), len(set(tx2gene.values()))))
+            r.write("  (full Trinity quant data not available)\n\n")
 
         # --- Section 8: BUSCO ---
         r.write("8. BUSCO COMPLETENESS\n")

@@ -13,6 +13,7 @@ process MMSEQS2_CLUSTER {
 
     output:
     path("representatives_dedup.fasta"), emit: fasta
+    path("nt_cluster_map.tsv"),           emit: cluster_tsv
     path("cluster_stats.txt"),           emit: stats
 
     script:
@@ -30,6 +31,7 @@ process MMSEQS2_CLUSTER {
     # Extract representative sequences (cluster representatives)
     # easy-cluster outputs: clust_rep_seq.fasta, clust_cluster.tsv, clust_all_seqs.fasta
     cp clust_rep_seq.fasta representatives_dedup.fasta
+    cp clust_cluster.tsv nt_cluster_map.tsv
 
     # Report
     N_IN=\$(grep -c '^>' ${representatives_fasta})

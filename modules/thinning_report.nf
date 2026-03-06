@@ -13,6 +13,8 @@ process THINNING_REPORT {
     path(faa)
     path(initial_quant_dirs)
     path(final_quant_dirs)
+    path(full_quant_dirs)
+    path(tx2gene)
     path(busco_trinity_summary)
     path(busco_reps_summary)
     path(busco_corrected_summary)
@@ -32,6 +34,7 @@ process THINNING_REPORT {
     script:
     def init_dirs  = initial_quant_dirs.collect { d -> d.name }.join(',')
     def final_dirs = final_quant_dirs.collect { d -> d.name }.join(',')
+    def full_dirs  = full_quant_dirs.collect { d -> d.name }.join(',')
     def log_files  = sortmerna_logs.collect { f -> f.name }.join(',')
     """
     thinning_report.py \\
@@ -43,6 +46,8 @@ process THINNING_REPORT {
         --faa              ${faa} \\
         --initial-quants   ${init_dirs} \\
         --final-quants     ${final_dirs} \\
+        --full-quants      ${full_dirs} \\
+        --tx2gene          ${tx2gene} \\
         --busco-trinity    ${busco_trinity_summary} \\
         --busco-reps       ${busco_reps_summary} \\
         --busco-corrected  ${busco_corrected_summary} \\

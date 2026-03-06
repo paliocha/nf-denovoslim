@@ -37,6 +37,9 @@ include { MINIMAP2_SPLICE                   } from './modules/minimap2'
 include { LOCUS_CLUSTER                     } from './modules/locus_cluster'
 include { FILTER_UNMAPPED                   } from './modules/filter_unmapped'
 include { MMSEQS2_CLUSTER_PROTEIN           } from './modules/mmseqs2_cluster_protein'
+include { BUILD_TX2GENE                     } from './modules/build_tx2gene'
+include { SALMON_INDEX as SALMON_INDEX_FULL } from './modules/salmon_index'
+include { SALMON_QUANT as SALMON_QUANT_FULL } from './modules/salmon_quant'
 include { VALIDATE_IDS                     } from './modules/validate_ids'
 include { BUSCO as BUSCO_TRINITY           } from './modules/busco'
 include { BUSCO as BUSCO_REPS              } from './modules/busco'
@@ -314,6 +317,35 @@ workflow {
         params.species_label
     )
 
+    // -- Full Trinity quantification + tx2gene (tximport-compatible) --
+    // Quantify against the decontaminated Trinity assembly (all isoforms
+    // from clean clusters) and build a tx2gene map that chains all
+    // collapsing steps.  Gives more accurate gene-level counts via
+    // tximport multi-mapping resolution.
+
+    SALMON_INDEX_FULL(DECONTAMINATE_TRINITY.out.fasta)
+
+    SALMON_QUANT_FULL(
+        ch_reads_for_salmon,
+        SALMON_INDEX_FULL.out.index.first(),
+        'full_quant'
+    )
+
+    // Build the tx2gene chain: transcript → Corset → nt dedup → locus → protein dedup
+    ch_locus_map_for_tx2gene = params.reference_genome
+        ? LOCUS_CLUSTER.out.map
+        : file("${projectDir}/assets/NO_FILE")
+    ch_protein_dedup_for_tx2gene = MMSEQS2_CLUSTER_PROTEIN.out.map
+
+    BUILD_TX2GENE(
+        CORSET.out.clust,
+        DECONTAMINATE_TRINITY.out.fasta,
+        MMSEQS2_CLUSTER.out.cluster_tsv,
+        ch_locus_map_for_tx2gene,
+        ch_protein_dedup_for_tx2gene,
+        params.species_label
+    )
+
     // -- BUSCO QC (parallel, on deduped proteins + representatives) --
 
     BUSCO_REPS(SELECT_REP.out.fasta, params.species_label, 'representatives')
@@ -338,6 +370,8 @@ workflow {
         MMSEQS2_CLUSTER_PROTEIN.out.faa,
         SALMON_QUANT_INITIAL.out.quant_dir.collect(),
         SALMON_QUANT_FINAL.out.quant_dir.collect(),
+        SALMON_QUANT_FULL.out.quant_dir.collect(),
+        BUILD_TX2GENE.out.tx2gene,
         BUSCO_TRINITY.out.summary,
         BUSCO_REPS.out.summary,
         BUSCO_CORRECTED.out.summary,
