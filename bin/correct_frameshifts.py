@@ -59,7 +59,7 @@ def parse_frameshifts(diamond_tsv):
             qframe = int(fields[4])
 
             # Only consider forward-strand hits (frames 1, 2, 3)
-            # SuperTranscripts from Lace should be in the correct orientation
+            # Representatives are selected in forward orientation
             if qframe < 0:
                 continue
 

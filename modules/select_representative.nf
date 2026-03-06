@@ -1,6 +1,5 @@
 /*
  * SELECT_REP — pick the longest Trinity transcript per Corset cluster
- * Replaces Lace SuperTranscripts with a simpler representative selection.
  */
 
 process SELECT_REP {

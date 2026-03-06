@@ -20,14 +20,14 @@ process MMSEQS2_TAXONOMY {
     tag "${species_label}"
 
     input:
-    path(supertranscripts_fasta)
+    path(representatives_fasta)
     val(taxonomy_db)
     val(search_sens)
     val(filter_taxon)
     val(species_label)
 
     output:
-    path("supertranscripts_filtered.fasta"), emit: fasta
+    path("representatives_filtered.fasta"), emit: fasta
     path("taxRes_lca.tsv"),                  emit: lca_tsv
     path("taxonomy_filter_stats.txt"),       emit: stats
     path("taxonomy_breakdown.tsv"),          emit: breakdown
@@ -41,7 +41,7 @@ process MMSEQS2_TAXONOMY {
     LOCAL_DB=./\$(basename ${taxonomy_db})
 
     # 1. Create MMseqs2 query DB
-    mmseqs createdb ${supertranscripts_fasta} queryDB
+    mmseqs createdb ${representatives_fasta} queryDB
 
     # 2. Taxonomy assignment via LCA
     MEM_GB=\$(( ${task.memory.toGiga()} * 85 / 100 ))
@@ -69,10 +69,10 @@ process MMSEQS2_TAXONOMY {
     mmseqs createsubdb kept_ids.list queryDB_h filteredDB_h
 
     # 7. Convert filtered DB back to FASTA
-    mmseqs convert2fasta filteredDB supertranscripts_filtered.fasta
+    mmseqs convert2fasta filteredDB representatives_filtered.fasta
 
     # 8. Taxonomy lineage breakdown table
-    #    Categorises every SuperTranscript by broad taxonomic group using
+    #    Categorises every representative by broad taxonomic group using
     #    the lineage string (column 9) from taxRes_lca.tsv, then marks
     #    each category as KEPT or REMOVED based on the filter.
     awk -F'\\t' '
@@ -129,8 +129,8 @@ process MMSEQS2_TAXONOMY {
     ' taxRes_lca.tsv > taxonomy_breakdown.tsv
 
     # 9. Summary statistics
-    TOTAL=\$(grep -c '^>' ${supertranscripts_fasta})
-    KEPT=\$(grep -c '^>' supertranscripts_filtered.fasta || echo 0)
+    TOTAL=\$(grep -c '^>' ${representatives_fasta})
+    KEPT=\$(grep -c '^>' representatives_filtered.fasta || echo 0)
     REMOVED=\$((TOTAL - KEPT))
 
     # Counts from breakdown
@@ -140,7 +140,7 @@ process MMSEQS2_TAXONOMY {
 
     cat > taxonomy_filter_stats.txt <<EOF
 Taxonomy filter: ${filter_taxon} (Viridiplantae) + 0 (no-hit)
-Total SuperTranscripts:         \$TOTAL
+Total representatives:          \$TOTAL
 Kept (total):                   \$KEPT (\$(awk "BEGIN{printf \\"%.1f\\", \$KEPT/\$TOTAL*100}")%)
   - Viridiplantae-assigned:     \$PLANT
   - No taxonomy hit (rescued):  \$NOHIT
@@ -150,6 +150,6 @@ Removed (non-Viridiplantae):    \$REMOVED (\$(awk "BEGIN{printf \\"%.1f\\", \$RE
 \$(cat taxonomy_breakdown.tsv | column -t -s '\t')
 EOF
 
-    echo "Taxonomy filter: kept \$KEPT / \$TOTAL SuperTranscripts (\$REMOVED removed, \$NOHIT no-hit rescued)"
+    echo "Taxonomy filter: kept \$KEPT / \$TOTAL representatives (\$REMOVED removed, \$NOHIT no-hit rescued)"
     """
 }

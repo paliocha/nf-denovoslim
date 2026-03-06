@@ -26,3 +26,6 @@ containers/
 nph71009-sup-0001-figures1-s8-tables1-s3.pdf
 bin/__pycache__/
 *.sif
+
+# Admin/node utility scripts (not pipeline code)
+cn_*.sh

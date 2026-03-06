@@ -341,25 +341,7 @@ def main():
                     if gm_len > 0:
                         gmst_psaurons.append(gm_ps)
                         gmst_lengths.append(gm_len)
-                elif len(parts) >= 8:  # Legacy 2-way format
-                    source = parts[1]
-                    prot_len = int(parts[2])
-                    psauron = float(parts[3])
-                    td2_len = int(parts[4])
-                    td2_ps = float(parts[5])
-                    met_len = int(parts[6])
-                    met_ps = float(parts[7])
 
-                    merge_sources[source] += 1
-                    merge_psaurons.append(psauron)
-                    merge_lengths.append(prot_len)
-
-                    if td2_len > 0:
-                        td2_psaurons.append(td2_ps)
-                        td2_lengths.append(td2_len)
-                    if met_len > 0:
-                        metaeuk_psaurons.append(met_ps)
-                        metaeuk_lengths.append(met_len)
 
     # -- Expression stats (initial = transcript-level) --
 

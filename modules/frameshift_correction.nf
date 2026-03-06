@@ -8,7 +8,7 @@ process DIAMOND_BLASTX {
     tag "${species_label}"
 
     input:
-    path(supertranscripts_fasta)
+    path(representatives_fasta)
     val(diamond_db)
     val(species_label)
 
@@ -64,7 +64,7 @@ process DIAMOND_BLASTX {
         --unal 1 \\
         -b \$BLOCK -c \$CHUNKS \\
         -d \$LOCAL_DB \\
-        -q ${supertranscripts_fasta} \\
+        -q ${representatives_fasta} \\
         --outfmt 6 qseqid qstart qend qlen qframe btop \\
             sseqid slen sstart send evalue bitscore score length pident qseq \\
         -p ${task.cpus} \\
@@ -77,7 +77,7 @@ process CORRECT_FRAMESHIFTS {
     tag "${species_label}"
 
     input:
-    path(supertranscripts_fasta)
+    path(representatives_fasta)
     path(diamond_tsv)
     val(species_label)
 
@@ -88,7 +88,7 @@ process CORRECT_FRAMESHIFTS {
     script:
     """
     correct_frameshifts.py \\
-        ${supertranscripts_fasta} \\
+        ${representatives_fasta} \\
         ${diamond_tsv} \\
         representatives_corrected.fasta \\
         > frameshift_stats.txt
