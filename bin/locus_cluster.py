@@ -142,55 +142,6 @@ def _find_best_gene(aln, genes, flank):
     return best_gene, best_overlap
 
 
-def assign_to_genes(alignments, genes_by_cs, flank=0):
-    """Assign each alignment to the best-overlapping reference gene.
-
-    For each mapped transcript, find all genes on the same chrom/strand
-    that overlap the alignment interval (extended by *flank* bp on each
-    side of every gene).  If no gene overlaps on the alignment strand,
-    the opposite strand is also checked.  Transcripts that don't overlap
-    any gene on either strand go to 'intergenic'.
-
-    Returns:
-        gene_members: dict of gene_id -> list of transcript IDs
-        tx_to_gene:   dict of transcript_id -> gene_id
-        n_intergenic: number of intergenic transcripts
-        n_opposite:   number of transcripts rescued from opposite strand
-    """
-    gene_members = defaultdict(list)
-    tx_to_gene = {}
-    n_intergenic = 0
-    n_opposite = 0
-
-    for qname, aln in alignments.items():
-        chrom = aln['target']
-        strand = aln['strand']
-        opp_strand = '-' if strand == '+' else '+'
-
-        # Try same strand first
-        best_gene, best_overlap = _find_best_gene(
-            aln, genes_by_cs.get((chrom, strand), []), flank)
-
-        # If nothing on same strand, try opposite strand
-        if not best_gene:
-            best_gene, best_overlap = _find_best_gene(
-                aln, genes_by_cs.get((chrom, opp_strand), []), flank)
-            if best_gene:
-                n_opposite += 1
-
-        if best_gene:
-            gene_members[best_gene].append(qname)
-            tx_to_gene[qname] = best_gene
-        else:
-            # No gene on either strand — intergenic
-            n_intergenic += 1
-            igid = f'intergenic_{n_intergenic:06d}'
-            gene_members[igid].append(qname)
-            tx_to_gene[qname] = igid
-
-    return gene_members, tx_to_gene, n_intergenic, n_opposite
-
-
 # ── Coordinate-overlap fallback ─────────────────────────────────────
 
 def merge_loci(alignments, max_gap):
@@ -264,6 +215,7 @@ def build_gene_candidates(multi_alns, genes_by_cs, flank):
     candidates = []
     tx_any_gene = set()
     n_opposite = 0
+    seen = set()  # deduplicate (tx, gene) pairs from overlapping alignments
 
     for qname, alns in multi_alns.items():
         for aln in alns:
@@ -281,8 +233,12 @@ def build_gene_candidates(multi_alns, genes_by_cs, flank):
                     opp = True
 
             if gene:
-                candidates.append((aln['matches'], aln['qlen'], qname, gene))
                 tx_any_gene.add(qname)
+                pair = (qname, gene)
+                if pair in seen:
+                    continue
+                seen.add(pair)
+                candidates.append((aln['matches'], aln['qlen'], qname, gene))
                 if opp:
                     n_opposite += 1
 
