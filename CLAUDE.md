@@ -84,6 +84,10 @@ Trinity.fasta + Reads
     │       │                       ▼
     │       │               MMSEQS2_CLUSTER_PROTEIN (95% aa dedup)
     │       │                       │
+    │       │                       ▼
+    │       │               [MINIPROT_ALIGN ──► MINIPROT_FILTER]
+    │       │                  (optional, genome validation of proteins)
+    │       │                       │
     │       │               ┌───────┴────────┐
     │       │               ▼                ▼
     │       │           BUSCO_QC         TRANSANNOT
@@ -115,6 +119,7 @@ Trinity.fasta + Reads
   - `gmst_select_best.py` — best GeneMarkS-T ORF per gene (completeness → length ranking)
   - `hmmer_extend.py` — Pfam domain-guided protein extension/rescue via pyhmmer (post-merge; integrates 6-frame translation, hmmsearch, extension/rescue in one script)
   - `locus_cluster.py` — greedy multi-alignment gene/locus collapse (minimap2 PAF → one transcript per reference gene)
+  - `miniprot_filter.py` — protein genome-validation filter (miniprot GFF → keep if mapped with ≥50% identity OR ≥75 aa)
   - `thinning_report.py` — pipeline summary statistics (argparse, named flags)
 
 ### DSL2 Patterns
@@ -232,3 +237,4 @@ Orion's site sbatch wrapper (`/cluster/software/slurm/site/bin/sbatch`) injects 
 12. **pyhmmer reads plain .hmm files** — no `hmmpress` needed. pyhmmer can also use pressed databases (`.h3m`/`.h3i`/`.h3f`/`.h3p`) if present, but they are not required. Just download `Pfam-A.hmm` and point `--pfam_hmm` at it.
 13. **Locus clustering is optional** — only runs when `--reference_genome` is provided. Uses minimap2 `-x splice --secondary=yes` to map representatives to the genome (secondary alignments enable greedy gene assignment). Two modes: **gene-level** (when `--reference_gff` also provided) uses *greedy multi-alignment assignment* — builds (transcript, gene, quality) candidates from all alignments, sorts globally by quality, then assigns one transcript per gene greedily. Transcripts whose primary gene is already filled can be *rescued* via a secondary alignment to an unfilled gene. **coordinate-overlap** (no GFF) merges nearby primary alignments into ad-hoc loci. Unmapped transcripts are always retained. Filters on **mapq** (not nucleotide identity) because cross-genus divergence makes nt identity unreliable — `--locus_min_mapq 5` (default) accepts alignments with a clear best location. The step sits between MMSEQS2_CLUSTER and DIAMOND_BLASTX.
 14. **Locus clustering breaks -resume for downstream** — adding/removing `--reference_genome` changes the input to DIAMOND_BLASTX (from MMSEQS2_CLUSTER to LOCUS_CLUSTER output), invalidating all cached downstream tasks. Adding `--reference_gff` also changes the LOCUS_CLUSTER process hash.
+15. **Miniprot validation is optional** — only runs when `--reference_genome` is provided (same gate as locus clustering). Aligns deduped proteins to the reference genome with miniprot, then filters: keep if mapped with Identity ≥ `--miniprot_min_identity` (default 0.5) OR protein length ≥ `--miniprot_min_length` (default 75 aa). Short proteins lacking genome support are removed as prediction artifacts. The step sits between MMSEQS2_CLUSTER_PROTEIN and BUSCO_QC/TRANSANNOT/VALIDATE_IDS. Adding this step invalidates cached downstream tasks (BUSCO_QC, TRANSANNOT, VALIDATE_IDS, THINNING_REPORT).

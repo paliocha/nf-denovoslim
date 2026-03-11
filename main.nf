@@ -36,6 +36,8 @@ include { HMMER_EXTEND                     } from './modules/hmmer_extend'
 include { MINIMAP2_SPLICE                   } from './modules/minimap2'
 include { LOCUS_CLUSTER                     } from './modules/locus_cluster'
 include { FILTER_UNMAPPED                   } from './modules/filter_unmapped'
+include { MINIPROT_ALIGN                    } from './modules/miniprot'
+include { MINIPROT_FILTER                   } from './modules/miniprot'
 include { MMSEQS2_CLUSTER_PROTEIN           } from './modules/mmseqs2_cluster_protein'
 include { BUILD_TX2GENE                     } from './modules/build_tx2gene'
 include { SALMON_INDEX as SALMON_INDEX_FULL } from './modules/salmon_index'
@@ -305,6 +307,29 @@ workflow {
 
     MMSEQS2_CLUSTER_PROTEIN(ch_proteins_for_dedup, params.species_label)
 
+    // -- Optional: miniprot protein-to-genome validation --
+    // Aligns predicted proteins to the reference genome with miniprot.
+    // Keeps proteins that either map with sufficient identity OR are long
+    // enough to trust without genomic evidence.  Short proteins lacking
+    // genome support are removed as potential prediction artifacts.
+    // Skipped when --reference_genome is null.
+
+    if (params.reference_genome) {
+        MINIPROT_ALIGN(
+            MMSEQS2_CLUSTER_PROTEIN.out.faa,
+            params.reference_genome,
+            params.species_label
+        )
+        MINIPROT_FILTER(
+            MMSEQS2_CLUSTER_PROTEIN.out.faa,
+            MINIPROT_ALIGN.out.gff,
+            params.species_label
+        )
+        ch_final_proteins = MINIPROT_FILTER.out.faa
+    } else {
+        ch_final_proteins = MMSEQS2_CLUSTER_PROTEIN.out.faa
+    }
+
     // -- ID validation --
 
     ch_first_quant_sf = SALMON_QUANT_FINAL.out.quant_dir
@@ -313,7 +338,7 @@ workflow {
 
     VALIDATE_IDS(
         ch_first_quant_sf,
-        MMSEQS2_CLUSTER_PROTEIN.out.faa,
+        ch_final_proteins,
         params.species_label
     )
 
@@ -350,10 +375,10 @@ workflow {
 
     BUSCO_REPS(SELECT_REP.out.fasta, params.species_label, 'representatives')
     BUSCO_CORRECTED(CORRECT_FRAMESHIFTS.out.fasta, params.species_label, 'corrected')
-    BUSCO_QC(MMSEQS2_CLUSTER_PROTEIN.out.faa, params.species_label, 'final')
+    BUSCO_QC(ch_final_proteins, params.species_label, 'final')
 
     TRANSANNOT(
-        MMSEQS2_CLUSTER_PROTEIN.out.faa,
+        ch_final_proteins,
         params.species_label,
         params.mmseqs2_pfam,
         params.mmseqs2_eggnog,
@@ -367,7 +392,7 @@ workflow {
         CORRECT_FRAMESHIFTS.out.fasta,
         CORSET.out.clust,
         MERGE_PREDICTIONS.out.map,
-        MMSEQS2_CLUSTER_PROTEIN.out.faa,
+        ch_final_proteins,
         SALMON_QUANT_INITIAL.out.quant_dir.collect(),
         SALMON_QUANT_FINAL.out.quant_dir.collect(),
         SALMON_QUANT_FULL.out.quant_dir.collect(),
