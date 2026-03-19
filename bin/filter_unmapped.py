@@ -1,29 +1,36 @@
 #!/usr/bin/env python3
 """
-filter_unmapped.py — Remove proteins from unmapped transcripts lacking expression.
+filter_unmapped.py — Remove proteins from unmapped transcripts lacking evidence.
 
 For genome-guided runs, LOCUS_CLUSTER marks each transcript as gene-assigned,
 intergenic, or unmapped.  Transcripts assigned to a gene or intergenic locus
 already have evidence (genomic location).  Unmapped transcripts that DO have a
-predicted ORF should still be retained if they show expression — but orphan
+predicted ORF may still be retained if they show expression — but orphan
 proteins from unmapped transcripts with no expression support are likely
 noise.
 
-Filtering rule for UNMAPPED transcripts:
-  Keep if the transcript has TPM > min_tpm in >= min_samples samples.
-  Remove otherwise.
+Additionally, unmapped transcripts with NO taxonomy classification (taxid=0)
+are removed unconditionally — expression alone cannot distinguish endophyte/
+epiphyte/contaminant mRNA from genuine plant transcripts when neither the
+taxonomy database nor the reference genome recognise the sequence.
+
+Filtering rules for UNMAPPED transcripts:
+  1. If --taxonomy-tsv is provided and taxid == 0: REMOVE (contaminant risk).
+  2. Otherwise: keep if TPM >= min_tpm in >= min_samples samples.
+  3. Remove if neither condition is met.
 
 All gene/intergenic transcripts are kept unconditionally.
 If no locus map is provided, all proteins are kept (no-op).
 
 Inputs:
-  --proteins    FASTA of merged/extended proteins (one per gene)
-  --locus-map   TSV from LOCUS_CLUSTER (transcript_id, gene_id, status)
-  --quant-dirs  Salmon quant directories (one per sample, each with quant.sf)
-  --min-tpm     Minimum TPM threshold [default: 1.0]
-  --min-samples Minimum number of samples meeting TPM threshold [default: 2]
-  --out         Output filtered protein FASTA
-  --stats       Output stats file
+  --proteins      FASTA of merged/extended proteins (one per gene)
+  --locus-map     TSV from LOCUS_CLUSTER (transcript_id, gene_id, status)
+  --taxonomy-tsv  TSV from MMSEQS2_TAXONOMY (taxRes_lca.tsv; optional)
+  --quant-dirs    Salmon quant directories (one per sample, each with quant.sf)
+  --min-tpm       Minimum TPM threshold [default: 1.0]
+  --min-samples   Minimum number of samples meeting TPM threshold [default: 2]
+  --out           Output filtered protein FASTA
+  --stats         Output stats file
 """
 
 import argparse
@@ -43,6 +50,24 @@ def load_locus_map(map_file):
             if row['status'] == 'retained' and row.get('gene_id', '') == 'unmapped':
                 unmapped.add(row['transcript_id'])
     return unmapped
+
+
+def load_taxonomy(tax_file):
+    """Load taxRes_lca.tsv, return set of transcript IDs with taxid == 0 (no hit)."""
+    no_hit = set()
+    with open(tax_file) as fh:
+        for line in fh:
+            fields = line.rstrip('\n').split('\t')
+            if len(fields) < 2:
+                continue
+            tx_id = fields[0]
+            try:
+                taxid = int(fields[1])
+            except ValueError:
+                continue
+            if taxid == 0:
+                no_hit.add(tx_id)
+    return no_hit
 
 
 def load_expression(quant_dirs, transcript_ids, min_tpm):
@@ -95,6 +120,8 @@ def main():
                         help='Input protein FASTA')
     parser.add_argument('--locus-map', required=True,
                         help='Locus map TSV from LOCUS_CLUSTER')
+    parser.add_argument('--taxonomy-tsv', default=None,
+                        help='taxRes_lca.tsv from MMSEQS2_TAXONOMY (optional)')
     parser.add_argument('--quant-dirs', nargs='+', required=True,
                         help='Salmon quant directories')
     parser.add_argument('--min-tpm', type=float, default=1.0,
@@ -111,6 +138,14 @@ def main():
     unmapped_tx = load_locus_map(args.locus_map)
     print(f"Unmapped transcripts in locus map: {len(unmapped_tx)}",
           file=sys.stderr)
+
+    # Load taxonomy — identify no-hit transcripts (contaminant risk)
+    if args.taxonomy_tsv:
+        no_hit_tx = load_taxonomy(args.taxonomy_tsv)
+        print(f"No-taxonomy-hit transcripts: {len(no_hit_tx)}",
+              file=sys.stderr)
+    else:
+        no_hit_tx = set()
 
     # Read all protein IDs and map to transcript IDs
     proteins = list(SeqIO.parse(args.proteins, 'fasta'))
@@ -142,12 +177,20 @@ def main():
     # Decide which unmapped proteins to keep
     keep_proteins = set()
     remove_proteins = set()
+    remove_nohit = set()      # unmapped + no taxonomy hit (contaminant)
+    remove_noexpr = set()     # unmapped + classified but no expression
     for pid, tx_id in unmapped_proteins.items():
+        # Rule 1: unmapped + no taxonomy hit → always remove (contaminant risk)
+        if tx_id in no_hit_tx:
+            remove_nohit.add(pid)
+            continue
+        # Rule 2: unmapped + classified plant → keep if expressed
         n_samples = expr_counts.get(tx_id, 0)
         if n_samples >= args.min_samples:
             keep_proteins.add(pid)
         else:
-            remove_proteins.add(pid)
+            remove_noexpr.add(pid)
+    remove_proteins = remove_nohit | remove_noexpr
 
     print(f"Unmapped proteins kept (expressed): {len(keep_proteins)}",
           file=sys.stderr)
@@ -165,18 +208,21 @@ def main():
     # Stats
     n_input = len(proteins)
     n_gene_intergenic = n_input - len(unmapped_proteins)
-    n_removed = len(remove_proteins)
     n_kept_unmapped = len(keep_proteins)
 
+    n_removed_nohit = len(remove_nohit)
+    n_removed_noexpr = len(remove_noexpr)
+
     stats = (
-        f"Unmapped transcript expression filter\n"
+        f"Unmapped transcript filter (expression + taxonomy)\n"
         f"{'=' * 50}\n"
         f"Input proteins:          {n_input:>10,}\n"
         f"Gene/intergenic (kept):  {n_gene_intergenic:>10,}\n"
         f"From unmapped tx:        {len(unmapped_proteins):>10,}\n"
-        f"  Expressed (kept):      {n_kept_unmapped:>10,} "
+        f"  Classified + expressed (kept):  {n_kept_unmapped:>10,} "
         f"(TPM >= {args.min_tpm} in >= {args.min_samples} samples)\n"
-        f"  Removed (no expr):     {n_removed:>10,}\n"
+        f"  No taxonomy hit (removed):      {n_removed_nohit:>10,}\n"
+        f"  Classified, no expr (removed):  {n_removed_noexpr:>10,}\n"
         f"{'─' * 50}\n"
         f"Output proteins:         {n_written:>10,}\n"
     )

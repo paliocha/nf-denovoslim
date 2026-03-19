@@ -286,15 +286,17 @@ workflow {
         ch_proteins_for_filter = MERGE_PREDICTIONS.out.faa
     }
 
-    // -- Filter unmapped transcripts lacking expression evidence --
+    // -- Filter unmapped transcripts lacking evidence --
     // Only active when genome-guided locus clustering was used.
-    // Requires both a predicted ORF (already guaranteed — these are proteins)
-    // and expression (TPM >= threshold in >= N samples).
+    // Removes unmapped + no-taxonomy-hit proteins unconditionally
+    // (likely contaminants).  Unmapped + classified proteins require
+    // expression (TPM >= threshold in >= N samples) to survive.
 
     if (params.reference_genome) {
         FILTER_UNMAPPED(
             ch_proteins_for_filter,
             ch_locus_map,
+            MMSEQS2_TAXONOMY.out.lca_tsv,
             SALMON_QUANT_FINAL.out.quant_dir.collect(),
             params.species_label
         )
