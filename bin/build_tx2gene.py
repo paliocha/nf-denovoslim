@@ -127,6 +127,9 @@ def main():
                         help='Locus cluster map TSV (optional)')
     parser.add_argument('--protein-dedup-map', default='',
                         help='Protein dedup cluster map TSV (optional)')
+    parser.add_argument('--final-proteins', default='',
+                        help='Final protein FASTA (after all filtering); '
+                             'restricts output to genes with a surviving protein')
     parser.add_argument('--output', required=True,
                         help='Output tx2gene.tsv')
     parser.add_argument('--stats', required=True,
@@ -156,6 +159,13 @@ def main():
         n_prot_groups = len(set(protein_gene_to_group.values()))
         print(f"  {len(protein_gene_to_group):,} genes → {n_prot_groups:,} protein groups")
 
+    # --- Load final protein IDs (restrict tx2gene to surviving genes) ---
+    final_gene_ids = set()
+    if args.final_proteins and os.path.isfile(args.final_proteins):
+        print("Loading final protein IDs...")
+        final_gene_ids = count_fasta_ids(args.final_proteins)
+        print(f"  {len(final_gene_ids):,} final proteins")
+
     # --- Get decontaminated transcript IDs ---
     print("Reading decontaminated Trinity FASTA IDs...")
     decontam_ids = count_fasta_ids(args.decontam_fasta)
@@ -165,6 +175,7 @@ def main():
     print("Resolving tx2gene chain...")
 
     n_no_cluster = 0
+    n_no_protein = 0
     n_total = 0
     gene_ids = set()
 
@@ -193,6 +204,12 @@ def main():
             if protein_gene_to_group:
                 gene = protein_gene_to_group.get(gene, gene)
 
+            # Step 5: restrict to genes surviving all downstream filters
+            # (FILTER_UNMAPPED, MINIPROT_FILTER, etc.)
+            if final_gene_ids and gene not in final_gene_ids:
+                n_no_protein += 1
+                continue
+
             out.write(f"{tx_id}\t{gene}\n")
             gene_ids.add(gene)
             n_total += 1
@@ -204,6 +221,8 @@ def main():
         stats.write(f"Decontaminated transcripts:  {len(decontam_ids):,}\n")
         stats.write(f"Mapped to genes:             {n_total:,}\n")
         stats.write(f"No Corset cluster:           {n_no_cluster:,}\n")
+        if final_gene_ids:
+            stats.write(f"No final protein (dropped):  {n_no_protein:,}\n")
         stats.write(f"Unique gene IDs:             {len(gene_ids):,}\n")
         stats.write(f"\nChain resolution steps:\n")
         stats.write(f"  Corset clusters:           {len(set(tx_to_cluster.values())):,}\n")
@@ -217,6 +236,8 @@ def main():
                      if gene_ids else "")
 
     print(f"tx2gene written: {n_total:,} transcripts → {len(gene_ids):,} genes")
+    if n_no_protein:
+        print(f"Dropped (no final protein): {n_no_protein:,} transcripts")
     if n_no_cluster:
         print(f"WARNING: {n_no_cluster:,} transcripts had no Corset cluster", file=sys.stderr)
 

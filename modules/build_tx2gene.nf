@@ -19,6 +19,7 @@ process BUILD_TX2GENE {
     path(nt_dedup_tsv)
     path(locus_map)
     path(protein_dedup_map)
+    path(final_proteins)
     val(species_label)
 
     output:
@@ -35,6 +36,7 @@ process BUILD_TX2GENE {
         --nt-dedup-tsv    ${nt_dedup_tsv} \\
         ${locus_arg} \\
         ${protein_arg} \\
+        --final-proteins  ${final_proteins} \\
         --output tx2gene.tsv \\
         --stats  tx2gene_stats.txt
     """

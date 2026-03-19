@@ -359,6 +359,7 @@ workflow {
     )
 
     // Build the tx2gene chain: transcript → Corset → nt dedup → locus → protein dedup
+    // Final protein FASTA restricts output to genes surviving all filters.
     ch_locus_map_for_tx2gene = params.reference_genome
         ? LOCUS_CLUSTER.out.map
         : file("${projectDir}/assets/NO_FILE")
@@ -370,6 +371,7 @@ workflow {
         MMSEQS2_CLUSTER.out.cluster_tsv,
         ch_locus_map_for_tx2gene,
         ch_protein_dedup_for_tx2gene,
+        ch_final_proteins,
         params.species_label
     )
 
